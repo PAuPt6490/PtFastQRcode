@@ -1,7 +1,7 @@
 # Regenerates docs screenshots with the renamed app (PtFastQRcode).
 # Windows are captured with PrintWindow, so overlapping windows do not pollute the shots.
 $ErrorActionPreference = 'Stop'
-$root = 'C:\FastQRcode'
+$root = Split-Path -Parent $PSScriptRoot   # 仓库根目录,脚本放在 tools\ 下
 Set-Location $root
 
 Add-Type -Namespace Shot -Name Api -MemberDefinition @'
