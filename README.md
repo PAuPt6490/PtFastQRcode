@@ -1,4 +1,4 @@
-# FastQRcode — Windows 快捷二维码小工具
+# PtFastQRcode — Windows 快捷二维码小工具
 
 按下全局快捷键唤起一个小窗口,粘贴内容即刻生成二维码:可以直接存成 PNG,也可以复制到剪贴板。
 纯 Win32 C++ 编写,静态链接,**单文件 EXE(约 290 KB)**,无需安装任何运行库。
@@ -23,7 +23,7 @@
 | 单实例 | 重复启动只会唤出已运行的窗口 |
 | 开机自启 | 写入 `HKCU\...\CurrentVersion\Run`,可随时关闭 |
 
-默认保存目录:`图片\FastQRcode`(首次保存时自动创建,之后记住上次目录)。
+默认保存目录:`图片\PtFastQRcode`(首次保存时自动创建,之后记住上次目录)。
 
 ## 两种界面风格 × 三种颜色模式
 
@@ -44,7 +44,7 @@
 
 ## 使用
 
-1. 双击 `成品\FastQRcode.exe`,首次运行会弹出窗口。
+1. 双击 `dist\PtFastQRcode.exe`,首次运行会弹出窗口。
 2. 按 `Ctrl + Alt + Q` 随时唤起;窗口出现在鼠标附近。
 3. 复制任意文本(网址、命令、口令…),再按快捷键:内容自动粘贴并生成二维码。
 4. `Ctrl + S` 保存 PNG,`Ctrl + D` 复制图片,`Esc` 关闭。
@@ -67,14 +67,14 @@ powershell -ExecutionPolicy Bypass -File build.ps1          # 增量构建
 powershell -ExecutionPolicy Bypass -File build.ps1 -Clean   # 清理后重编
 ```
 
-产物:`成品\FastQRcode.exe`(静态 CRT `/MT` + LTCG,单文件)。
+产物:`dist\PtFastQRcode.exe`(静态 CRT `/MT` + LTCG,单文件)。
 
 ## 目录结构
 
 ```
-FastQRcode/
+PtFastQRcode/
 ├─ build.ps1                 构建脚本(rc → cl → link)
-├─ 成品/FastQRcode.exe       交付产物(单文件)
+├─ dist/PtFastQRcode.exe       交付产物(单文件)
 ├─ assets/app.ico            由 PtFastQRcode.png 生成的多尺寸图标
 ├─ PtFastQRcode.png          原始图标素材
 ├─ src/
@@ -112,7 +112,7 @@ FastQRcode/
 | 点击窗口外 | 窗口隐藏 |
 | 托盘右键菜单 | 正确弹出,含快捷键提示与勾选状态 |
 | 开机自启 | `HKCU\...\Run` 写入/删除均正确 |
-| 设置持久化 | `HKCU\Software\FastQRcode` 读写正常,重启生效 |
+| 设置持久化 | `HKCU\Software\PtFastQRcode` 读写正常,重启生效 |
 | 重复启动 | 仍为单进程,原实例被唤出 |
 | 缩放窗口 | 二维码同步放大,底部按钮/状态栏保持贴底 |
 | 资源占用 | 私有内存:空闲 1.9 MB,打开窗口约 2.6 MB(反复开关不增长);调用系统保存对话框后系统会加载资源管理器扩展,私有内存升至约 15 MB(Windows 通用对话框行为,非本程序泄漏) |
@@ -122,4 +122,4 @@ FastQRcode/
 - 仅支持 Windows 10/11 x64。
 - 采用系统级 DPI 感知:在不同缩放比例的显示器之间拖动不会自动重排,但窗口可手动缩放。
 - 托盘图标沿用素材原图的整体图案,16 px 下细节辨识度有限。
-- 设置保存在注册表 `HKCU\Software\FastQRcode`,不做多用户隔离之外的处理。
+- 设置保存在注册表 `HKCU\Software\PtFastQRcode`,不做多用户隔离之外的处理。

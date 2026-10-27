@@ -1,4 +1,4 @@
-// FastQRcode - shared application declarations.
+// PtFastQRcode - shared application declarations.
 #pragma once
 
 #define WIN32_LEAN_AND_MEAN

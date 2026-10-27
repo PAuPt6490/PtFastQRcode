@@ -10,7 +10,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace FastQRcode.Qr
+namespace PtFastQRcode.Qr
 {
     public enum EccLevel
     {

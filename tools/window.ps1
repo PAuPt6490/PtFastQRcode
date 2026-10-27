@@ -1,8 +1,8 @@
-# Finds a FastQRcode window handle by class name (DPI independent) and optionally posts a command.
-#   powershell -File tools\window.ps1 -Class FastQRcodePopup
-#   powershell -File tools\window.ps1 -Class FastQRcodePopup -Command 2005
+# Finds a PtFastQRcode window handle by class name (DPI independent) and optionally posts a command.
+#   powershell -File tools\window.ps1 -Class PtFastQRcodePopup
+#   powershell -File tools\window.ps1 -Class PtFastQRcodePopup -Command 2005
 param(
-    [string]$Class = 'FastQRcodePopup',
+    [string]$Class = 'PtFastQRcodePopup',
     [int]$Command = 0
 )
 

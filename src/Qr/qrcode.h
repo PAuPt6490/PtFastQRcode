@@ -1,4 +1,4 @@
-// FastQRcode - QR Code encoder (Model 2, versions 1-40, ECC L/M/Q/H).
+// PtFastQRcode - QR Code encoder (Model 2, versions 1-40, ECC L/M/Q/H).
 //
 // C++ port of the algorithms and tables from Project Nayuki's QR Code generator
 // library (https://www.nayuki.io/page/qr-code-generator-library, MIT License).

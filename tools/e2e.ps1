@@ -1,4 +1,4 @@
-# End-to-end checks for FastQRcode: hotkey, paste+save, click-outside close, tray menu.
+# End-to-end checks for PtFastQRcode: hotkey, paste+save, click-outside close, tray menu.
 #   powershell -File tools\e2e.ps1 -Test hotkey
 param(
     [string]$Test = 'hotkey'
@@ -43,21 +43,21 @@ function Send-Hotkey {
     [E2E.Api]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)       # Ctrl up
 }
 
-$popup = Find-AppWindow 'FastQRcodePopup'
+$popup = Find-AppWindow 'PtFastQRcodePopup'
 $visibleBefore = if ($popup -ne [IntPtr]::Zero) { [E2E.Api]::IsWindowVisible($popup) } else { $false }
 
 switch ($Test) {
     'hotkey' {
         Send-Hotkey
         Start-Sleep -Milliseconds 500
-        $popup = Find-AppWindow 'FastQRcodePopup'
+        $popup = Find-AppWindow 'PtFastQRcodePopup'
         $visibleAfter = if ($popup -ne [IntPtr]::Zero) { [E2E.Api]::IsWindowVisible($popup) } else { $false }
         "hotkey: before=$visibleBefore after=$visibleAfter"
         if ($visibleAfter) { exit 0 } else { exit 1 }
     }
     'outside' {
         # Requires the popup to be visible: click far away on the desktop.
-        $popup = Find-AppWindow 'FastQRcodePopup'
+        $popup = Find-AppWindow 'PtFastQRcodePopup'
         $rect = New-Object E2E.Api+RECT
         [E2E.Api]::GetWindowRect($popup, [ref]$rect) | Out-Null
         [E2E.Api]::SetCursorPos(20, 20) | Out-Null
@@ -70,7 +70,7 @@ switch ($Test) {
         if ($stillVisible) { exit 1 } else { exit 0 }
     }
     'tray' {
-        $controller = Find-AppWindow 'FastQRcodeController'
+        $controller = Find-AppWindow 'PtFastQRcodeController'
         if ($controller -eq [IntPtr]::Zero) { "controller window not found"; exit 1 }
         [E2E.Api]::SetCursorPos(600, 400) | Out-Null
         [E2E.Api]::PostMessage($controller, 0x8000 + 11, [IntPtr]::Zero, [IntPtr]0x0205) | Out-Null  # WM_APP_TRAY + WM_RBUTTONUP

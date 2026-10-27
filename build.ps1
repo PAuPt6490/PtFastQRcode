@@ -1,7 +1,7 @@
-﻿# Builds FastQRcode as a single statically linked Win32 executable.
+﻿# Builds PtFastQRcode as a single statically linked Win32 executable.
 # Toolchain: MSVC + Windows SDK already present on this machine (see tools\env.ps1).
 #
-#   pwsh -File build.ps1            # release build into .\成品
+#   pwsh -File build.ps1            # release build into .\dist
 #   pwsh -File build.ps1 -Clean     # wipe intermediate objects first
 
 param(
@@ -15,8 +15,8 @@ Set-Location $root
 . (Join-Path $root 'tools\env.ps1')
 
 $objDir = Join-Path $root 'build\obj'
-$outDir = Join-Path $root '成品'
-$exePath = Join-Path $outDir 'FastQRcode.exe'
+$outDir = Join-Path $root 'dist'
+$exePath = Join-Path $outDir 'PtFastQRcode.exe'
 
 if ($Clean -and (Test-Path (Join-Path $root 'build'))) {
     Remove-Item -Recurse -Force (Join-Path $root 'build')

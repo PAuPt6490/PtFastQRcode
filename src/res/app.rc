@@ -18,11 +18,11 @@ BEGIN
     BEGIN
         BLOCK "080404b0"
         BEGIN
-            VALUE "FileDescription", "FastQRcode - quick QR code generator"
+            VALUE "FileDescription", "PtFastQRcode - quick QR code generator"
             VALUE "FileVersion", "1.0.0.0"
-            VALUE "InternalName", "FastQRcode"
-            VALUE "OriginalFilename", "FastQRcode.exe"
-            VALUE "ProductName", "FastQRcode"
+            VALUE "InternalName", "PtFastQRcode"
+            VALUE "OriginalFilename", "PtFastQRcode.exe"
+            VALUE "ProductName", "PtFastQRcode"
             VALUE "ProductVersion", "1.0.0.0"
         END
     END

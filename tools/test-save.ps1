@@ -31,11 +31,11 @@ function Find-Class([string]$class) {
 function Key([int]$vk, [int]$up) { [SaveTest.Api]::keybd_event([byte]$vk, 0, [uint32]$up, [UIntPtr]::Zero) }
 function Hotkey { Key 0x11 0; Key 0x12 0; Start-Sleep -Milliseconds 50; Key 0x51 0; Start-Sleep -Milliseconds 50; Key 0x51 2; Key 0x12 2; Key 0x11 2 }
 
-$app = Get-Process FastQRcode -ErrorAction SilentlyContinue
-if (-not $app) { Write-Error 'FastQRcode is not running'; exit 1 }
+$app = Get-Process PtFastQRcode -ErrorAction SilentlyContinue
+if (-not $app) { Write-Error 'PtFastQRcode is not running'; exit 1 }
 
 # Make sure the popup starts hidden so the hotkey opens (and does not toggle) it.
-$popup = Find-Class 'FastQRcodePopup'
+$popup = Find-Class 'PtFastQRcodePopup'
 if ($popup -ne [IntPtr]::Zero -and [SaveTest.Api]::IsWindowVisible($popup)) {
     [SaveTest.Api]::PostMessage($popup, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
     Start-Sleep -Milliseconds 400
@@ -45,7 +45,7 @@ Set-Clipboard -Value $Text
 Hotkey
 Start-Sleep -Milliseconds 900
 
-$popup = Find-Class 'FastQRcodePopup'
+$popup = Find-Class 'PtFastQRcodePopup'
 $visible = ($popup -ne [IntPtr]::Zero) -and [SaveTest.Api]::IsWindowVisible($popup)
 "popup visible: $visible"
 if (-not $visible) { exit 2 }
@@ -60,7 +60,7 @@ if ($dialog -eq [IntPtr]::Zero) { exit 3 }
 Key 0x0D 0; Start-Sleep -Milliseconds 80; Key 0x0D 2
 Start-Sleep -Milliseconds 1600
 
-$dir = Join-Path $env:USERPROFILE 'Pictures\FastQRcode'
+$dir = Join-Path $env:USERPROFILE 'Pictures\PtFastQRcode'
 if (-not (Test-Path $dir)) { "save folder missing: $dir"; exit 4 }
 $file = Get-ChildItem $dir -File -Filter *.png | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $file) { "no png saved"; exit 5 }

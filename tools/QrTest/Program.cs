@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using FastQRcode.Qr;
+using PtFastQRcode.Qr;
 
 internal static class Program
 {

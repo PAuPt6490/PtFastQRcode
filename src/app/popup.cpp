@@ -215,7 +215,7 @@ void paintPopup(HWND hwnd, HDC hdc) {
     }
 
     RECT titleRect = st->layout.title;
-    drawTextGdi(hdc, g_fonts.title, g_theme.text, L"FastQRcode", titleRect,
+    drawTextGdi(hdc, g_fonts.title, g_theme.text, L"PtFastQRcode", titleRect,
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     std::wstring subtitle = formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk) + L"  唤起";

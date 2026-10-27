@@ -37,8 +37,8 @@ function Find-Class([string]$class) {
     return $script:found
 }
 
-$controller = Find-Class 'FastQRcodeController'
-if ($controller -eq [IntPtr]::Zero) { Write-Error 'FastQRcode is not running'; exit 1 }
+$controller = Find-Class 'PtFastQRcodeController'
+if ($controller -eq [IntPtr]::Zero) { Write-Error 'PtFastQRcode is not running'; exit 1 }
 
 $id = New-Object TrayTest.Api+NOTIFYICONIDENTIFIER
 $id.cbSize = [Runtime.InteropServices.Marshal]::SizeOf([type][TrayTest.Api+NOTIFYICONIDENTIFIER])
@@ -53,7 +53,7 @@ $y = [int](($rect.Top + $rect.Bottom) / 2)
 "tray icon rect: $($rect.Left),$($rect.Top) $($rect.Right-$rect.Left)x$($rect.Bottom-$rect.Top) -> click $x,$y"
 
 # hide the popup first so a leftover visible window cannot confuse the result
-$popup = Find-Class 'FastQRcodePopup'
+$popup = Find-Class 'PtFastQRcodePopup'
 if ($popup -ne [IntPtr]::Zero -and [TrayTest.Api]::IsWindowVisible($popup)) {
     [TrayTest.Api]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
     [TrayTest.Api]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
@@ -86,7 +86,7 @@ if ($Button -eq 'right') {
     Start-Sleep -Milliseconds 80
     [TrayTest.Api]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)   # left up
     Start-Sleep -Milliseconds 800
-    $popup = Find-Class 'FastQRcodePopup'
+    $popup = Find-Class 'PtFastQRcodePopup'
     $visible = ($popup -ne [IntPtr]::Zero) -and [TrayTest.Api]::IsWindowVisible($popup)
     "popup visible after left click: $visible"
     if ($visible) { exit 0 } else { exit 4 }

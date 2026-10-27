@@ -21,3 +21,6 @@ desktop.ini
 # Python 缓存
 __pycache__/
 *.pyc
+
+# 临时截图
+/tools/renamed-*.png

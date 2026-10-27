@@ -1,8 +1,8 @@
-# Captures a FastQRcode window at physical resolution (DPI aware).
+# Captures a PtFastQRcode window at physical resolution (DPI aware).
 # Uses PrintWindow so the shot is correct even when the window is partially covered.
-#   powershell -File tools\capture.ps1 -Class FastQRcodePopup -Out tools\shot.png
+#   powershell -File tools\capture.ps1 -Class PtFastQRcodePopup -Out tools\shot.png
 param(
-    [string]$Class = 'FastQRcodePopup',
+    [string]$Class = 'PtFastQRcodePopup',
     [string]$Out = 'tools\shot.png'
 )
 

@@ -22,15 +22,15 @@ UINT g_hotkeyId = 1;
 static HFONT g_glyphFont = nullptr;   // Segoe icon font, created lazily
 static bool g_paintBuffered = false;  // only during interactive size/move
 
-const wchar_t* kAppName = L"FastQRcode";
+const wchar_t* kAppName = L"PtFastQRcode";
 const wchar_t* kAppVersion = L"1.0.0";
-const wchar_t* kWndClassController = L"FastQRcodeController";
-const wchar_t* kWndClassPopup = L"FastQRcodePopup";
-const wchar_t* kWndClassSettings = L"FastQRcodeSettings";
-const wchar_t* kWndClassHotkey = L"FastQRcodeHotkey";
-const wchar_t* kRegRoot = L"Software\\FastQRcode";
+const wchar_t* kWndClassController = L"PtFastQRcodeController";
+const wchar_t* kWndClassPopup = L"PtFastQRcodePopup";
+const wchar_t* kWndClassSettings = L"PtFastQRcodeSettings";
+const wchar_t* kWndClassHotkey = L"PtFastQRcodeHotkey";
+const wchar_t* kRegRoot = L"Software\\PtFastQRcode";
 const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-const wchar_t* kRunValue = L"FastQRcode";
+const wchar_t* kRunValue = L"PtFastQRcode";
 
 Settings g_settings;
 Theme g_theme;
@@ -49,7 +49,7 @@ std::wstring defaultSaveDir() {
     std::wstring result;
     if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Pictures, 0, nullptr, &path))) {
         result = path;
-        result += L"\\FastQRcode";
+        result += L"\\PtFastQRcode";
         CoTaskMemFree(path);
     } else {
         result = L".";

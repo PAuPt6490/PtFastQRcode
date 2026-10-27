@@ -126,14 +126,14 @@ void removeTrayIcon() {
 
 void showAboutWindow() {
     std::wstring message;
-    message += L"FastQRcode  ";
+    message += L"PtFastQRcode  ";
     message += kAppVersion;
     message += L"\n\n";
     message += L"快捷键:" + formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk) +
                L" 唤起二维码窗口\n";
     message += L"纯 Win32 原生实现,静态链接,单文件运行,无第三方运行库。\n";
     message += L"二维码编码器为本项目自带实现,已与参考实现逐模块比对并通过扫码回读验证。";
-    MessageBoxW(g_controller, message.c_str(), L"关于 FastQRcode", MB_ICONINFORMATION | MB_OK);
+    MessageBoxW(g_controller, message.c_str(), L"关于 PtFastQRcode", MB_ICONINFORMATION | MB_OK);
 }
 
 void showTrayMenuImpl() {
@@ -421,7 +421,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     const int attempts = restartMode ? 60 : 1;
     for (int attempt = 0; attempt < attempts; ++attempt) {
         if (mutex) CloseHandle(mutex);
-        mutex = CreateMutexW(nullptr, FALSE, L"Local\\FastQRcode.SingleInstance");
+        mutex = CreateMutexW(nullptr, FALSE, L"Local\\PtFastQRcode.SingleInstance");
         alreadyRunning = !mutex || GetLastError() == ERROR_ALREADY_EXISTS;
         if (!alreadyRunning) break;
         if (attempt + 1 < attempts) Sleep(100);
@@ -432,7 +432,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
         if (existing) {
             PostMessageW(existing, WM_APP_SHOW, 0, 0);
         } else {
-            MessageBoxW(nullptr, L"FastQRcode 已在运行,但找不到它的窗口。", kAppName,
+            MessageBoxW(nullptr, L"PtFastQRcode 已在运行,但找不到它的窗口。", kAppName,
                         MB_ICONWARNING | MB_OK);
         }
         if (mutex) CloseHandle(mutex);

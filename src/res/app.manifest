@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="FastQRcode" version="1.0.0.0" processorArchitecture="amd64"/>
-  <description>FastQRcode quick QR code generator</description>
+  <assemblyIdentity type="win32" name="PtFastQRcode" version="1.0.0.0" processorArchitecture="amd64"/>
+  <description>PtFastQRcode quick QR code generator</description>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
