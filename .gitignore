@@ -1,0 +1,23 @@
+# 构建中间产物
+/build/
+
+# 探针与测试产物
+/tools/probe/*.obj
+/tools/probe/*.exe
+/tools/*.log
+/tools/*.txt
+/tools/shot*.png
+/tools/theme-*.png
+/tools/settings-*.png
+/tools/popup-*.png
+/tools/tray-*.png
+
+# 崩溃转储与临时文件
+*.dmp
+*.tmp
+Thumbs.db
+desktop.ini
+
+# Python 缓存
+__pycache__/
+*.pyc

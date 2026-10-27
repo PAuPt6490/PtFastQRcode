@@ -1,0 +1,6 @@
+* text=auto eol=lf
+
+# 二进制资源按原样保存
+*.png binary
+*.ico binary
+*.exe binary
