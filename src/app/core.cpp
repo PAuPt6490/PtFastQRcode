@@ -400,7 +400,9 @@ void drawSystemGlyph(HDC hdc, const RECT& rc, wchar_t glyph, COLORREF color) {
 }
 
 void paintFieldFrame(HWND hwnd, HDC hdc, const RECT& rc, int radius) {
-    if (g_theme.flatClick) {
+    // The themed EDIT background is light even when the app runs dark, so the native path
+    // is only used for the light classic look; dark classic paints its own frame.
+    if (g_theme.flatClick && !g_theme.dark) {
         HTHEME theme = OpenThemeData(hwnd, L"EDIT");
         if (theme) {
             RECT frame = rc;
