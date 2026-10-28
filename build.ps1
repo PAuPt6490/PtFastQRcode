@@ -1,22 +1,26 @@
-﻿# Builds PtFastQRcode as a single statically linked Win32 executable.
+# Builds PtFastQRcode as a single statically linked Win32 executable.
 # Toolchain: MSVC + Windows SDK already present on this machine (see tools\env.ps1).
 #
-#   pwsh -File build.ps1            # release build into .\dist
-#   pwsh -File build.ps1 -Clean     # wipe intermediate objects first
+#   powershell -File build.ps1                 # x64 release build into .\dist
+#   powershell -File build.ps1 -Arch x86       # 32-bit build (Win7+ compatible)
+#   powershell -File build.ps1 -Clean          # wipe intermediate objects first
 
 param(
-    [switch]$Clean
+    [switch]$Clean,
+    [ValidateSet('x64', 'x86')]
+    [string]$Arch = 'x64'
 )
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
-. (Join-Path $root 'tools\env.ps1')
+. (Join-Path $root 'tools\env.ps1') -Arch $Arch
 
-$objDir = Join-Path $root 'build\obj'
+$objDir = Join-Path $root "build\obj-$Arch"
 $outDir = Join-Path $root 'dist'
-$exePath = Join-Path $outDir 'PtFastQRcode.exe'
+$exeName = if ($Arch -eq 'x86') { 'PtFastQRcode-x86.exe' } else { 'PtFastQRcode.exe' }
+$exePath = Join-Path $outDir $exeName
 
 if ($Clean -and (Test-Path (Join-Path $root 'build'))) {
     Remove-Item -Recurse -Force (Join-Path $root 'build')
@@ -45,10 +49,12 @@ if ($LASTEXITCODE -ne 0) { throw "rc.exe failed with $LASTEXITCODE" }
 # --- compile + link (-GL/-LTCG keeps the static CRT compact) ---
 # No C runtime: crt_stub.cpp provides the entry point, allocator and memory primitives.
 # Exceptions and RTTI are off so the C++ EH runtime is never referenced.
+# 0x0601 = Windows 7: everything imported is available there.
+$target = if ($Arch -eq 'x86') { '/MACHINE:X86' } else { '/MACHINE:X64' }
 $commonDefines = @(
     '/nologo', '/c', '/O2', '/MT', '/NODEFAULTLIB', '/GS-', '/EHs-c-', '/GR-',
     '/D_HAS_EXCEPTIONS=0', '/utf-8', '/W3',
-    '/DUNICODE', '/D_UNICODE', '/D_WIN32_WINNT=0x0A00', '/DWINVER=0x0A00',
+    '/DUNICODE', '/D_UNICODE', '/D_WIN32_WINNT=0x0601', '/DWINVER=0x0601',
     "/I$(Join-Path $root 'src')", "/I$(Join-Path $root 'src\res')",
     "/Fo$objDir\"
 ) + $IncFlags
@@ -68,8 +74,8 @@ $objects = $sources | ForEach-Object {
 }
 
 $linkArgs = @(
-    '/nologo', '/SUBSYSTEM:WINDOWS', '/LTCG', '/OPT:REF', '/OPT:ICF', '/MANIFEST:NO',
-    '/NODEFAULTLIB', '/ENTRY:entryPoint',
+    '/nologo', '/SUBSYSTEM:WINDOWS,6.01', $target, '/LTCG', '/OPT:REF', '/OPT:ICF',
+    '/MANIFEST:NO', '/NODEFAULTLIB', "/ENTRY:$EntrySymbol",
     "/OUT:$exePath"
 ) + $LibFlags + $objects + @($resPath) + @(
     'kernel32.lib', 'user32.lib', 'gdi32.lib', 'shell32.lib',

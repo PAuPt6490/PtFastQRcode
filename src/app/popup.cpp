@@ -414,11 +414,13 @@ void pasteFromClipboard(HWND hwnd) {
 // Returns the pages freed by tearing the window down: compact the heap first so the
 // commit charge actually drops, then empty the working set.
 void trimProcessMemory() {
-    HEAP_OPTIMIZE_RESOURCES_INFORMATION optimize;
-    ZeroMemory(&optimize, sizeof(optimize));
-    optimize.Version = HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION;
-    HeapSetInformation(GetProcessHeap(), (HEAP_INFORMATION_CLASS)HeapOptimizeResources, &optimize,
-                       sizeof(optimize));
+    // Declared locally: the SDK hides these behind a Windows 10 target version, but the
+    // call is harmless on anything older (it simply fails).
+    struct HeapOptimizeInfo {
+        DWORD Version;
+        DWORD Flags;
+    } optimize = {1, 0};
+    HeapSetInformation(GetProcessHeap(), (HEAP_INFORMATION_CLASS)3, &optimize, sizeof(optimize));
     SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 }
 

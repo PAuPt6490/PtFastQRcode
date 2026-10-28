@@ -53,6 +53,13 @@ bool createSurface(int size, const qr::Symbol& symbol, Surface& surface) {
     DeleteObject(white);
 
     drawQrSymbol(surface.dc, all, symbol, 0);
+
+    // GDI leaves the alpha bytes untouched, so a 32bpp DIB would encode as fully
+    // transparent. Force every pixel opaque before the surface is used.
+    BYTE* pixels = static_cast<BYTE*>(surface.bits);
+    const size_t count = (size_t)size * (size_t)size;
+    for (size_t i = 0; i < count; ++i) pixels[i * 4 + 3] = 255;
+
     surface.width = size;
     surface.height = size;
     return true;

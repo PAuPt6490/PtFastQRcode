@@ -96,6 +96,16 @@ static std::wstring regReadString(HKEY key, const wchar_t* name, const std::wstr
 
 
 
+// Win7/8 have no Segoe Fluent Icons and no system dark mode, so the WinUI 3 skin cannot
+// look like itself there; the classic Win32 skin is the honest default on those systems.
+static int defaultUiStyle() {
+    OSVERSIONINFOEXW info = {};
+    info.dwOSVersionInfoSize = sizeof(info);
+    info.dwMajorVersion = 10;
+    const DWORDLONG condition = VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL);
+    return VerifyVersionInfoW(&info, VER_MAJORVERSION, condition) ? 1 : 0;
+}
+
 void loadSettings() {
     g_settings.hotkeyMods = MOD_CONTROL | MOD_ALT;
     g_settings.hotkeyVk = 'Q';
@@ -104,7 +114,7 @@ void loadSettings() {
     g_settings.closeAfterSave = true;
     g_settings.eccLevel = 1;
     g_settings.qrSize = 360;
-    g_settings.uiStyle = 1;
+    g_settings.uiStyle = defaultUiStyle();
     g_settings.themeMode = 0;
     g_settings.popupWidth = 400;
     g_settings.popupHeight = 470;

@@ -27,3 +27,7 @@ __pycache__/
 
 # local publish script
 /tools/publish_github.ps1
+
+# scratch test output
+/tools/patch_*.py
+/tools/*.png.txt

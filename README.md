@@ -1,8 +1,9 @@
 # PtFastQRcode — Windows 快捷二维码小工具
 
 按下全局快捷键唤起一个小窗口,粘贴内容即刻生成二维码:可以直接存成 PNG,也可以复制到剪贴板。
-纯 Win32 C++ 编写,**单文件 EXE(约 128 KB)**,不链接 C 运行库、不依赖 GDI+,
-只调用系统 DLL,无需安装任何运行库;窗口关闭即销毁,内存回到托盘基线。
+纯 Win32 C++ 编写,**单文件 EXE(x64 约 134 KB / x86 约 116 KB)**,不链接 C 运行库、
+不依赖 GDI+,只调用系统 DLL,无需安装任何运行库;窗口关闭即销毁,内存回到托盘基线。
+最低支持 **Windows 7 SP1**(x86 版同时覆盖 32/64 位系统)。
 
 ![主窗口(深色)](docs/popup-dark.png)
 
@@ -68,7 +69,29 @@ powershell -ExecutionPolicy Bypass -File build.ps1          # 增量构建
 powershell -ExecutionPolicy Bypass -File build.ps1 -Clean   # 清理后重编
 ```
 
-产物:`dist\PtFastQRcode.exe`(单文件,约 126 KB)。
+产物:
+
+| 架构 | 文件 | 覆盖 |
+| --- | --- | --- |
+| x64 | `dist\PtFastQRcode.exe` | Win7 SP1 x64 及以上 |
+| x86 | `dist\PtFastQRcode-x86.exe` | **Win7 SP1 起,32/64 位通吃**(64 位经 WOW64) |
+
+```powershell
+powershell -File build.ps1 -Arch x86     # 32 位
+powershell -File build.ps1 -Arch x64     # 64 位(默认)
+```
+
+两种架构都设 `_WIN32_WINNT=0x0601`:导入表里没有任何 Win8+/Win10+ 的函数,
+在 Win7 上不会出现"找不到入口点"而启动失败。
+
+### 自检模式
+
+```powershell
+PtFastQRcode.exe --selftest C:\temp\check.png   # 无界面:编码固定内容并写出 PNG
+```
+
+旁边会生成 `check.png.txt`,记录符号尺寸、保存是否成功与文件字节数。
+在没有桌面自动化的机器(如虚拟机)上验证"生成 + WIC 编码"是否正常时很有用。
 
 ### 体积与内存是怎么压下来的
 
@@ -88,6 +111,7 @@ powershell -ExecutionPolicy Bypass -File build.ps1 -Clean   # 清理后重编
 | 指标 | 优化前 | 优化后 |
 | --- | --- | --- |
 | EXE 体积 | 291.5 KB | **128 KB** |
+| x86 构建体积 | — | **116 KB** |
 | 私用内存(仅托盘) | 1.87 MB | **1.48 MB** |
 | 私用内存(窗口打开) | 2.55 MB | **2.24 MB** |
 | 工作集(窗口打开) | 20 MB | **17.8 MB** |
@@ -159,9 +183,26 @@ PtFastQRcode/
 | 资源占用 | 私有内存:仅托盘 1.54 MB,打开窗口约 2.1 MB(反复开关不增长);调用系统保存对话框后系统会加载资源管理器扩展,私有内存升至约 13 MB(Windows 通用对话框行为,非本程序泄漏) |
 | 无运行库依赖 | 导入表仅 kernel32/user32/gdi32/shell32/ole32/comctl32/advapi32/uxtheme,无 CRT、无 GDI+ |
 
+## Windows 7 实测
+
+在一台 Windows 7 RTM 32 位虚拟机(VirtualBox)上验证:
+
+| 检查项 | 结果 |
+| --- | --- |
+| 32 位 EXE 启动 | ✅ 原生运行,进程正常驻留托盘 |
+| 界面风格 | ✅ 自动判定为非 Win10,默认用 Win32 经典风格 |
+| 剪贴板自动粘贴 | ✅ |
+| 二维码生成 | ✅ 从虚拟机截图解码得回原文 |
+| 托盘图标 | ✅ |
+| 保存 PNG(WIC) | ✅ 文件写出、alpha 不透明、扫码解回原文 |
+| 保存对话框 | ✅ 子进程正常弹出“另存为”,类型/预填文件名正确 |
+
+> Win7 上对话框默认打开"上次用过的文件夹"(系统 MRU 行为),而不是设置里的保存目录;
+> 这是 `GetSaveFileNameW` 的既定行为,保存位置始终以用户最后选择为准。
+
 ## 已知限制
 
-- 仅支持 Windows 10/11 x64。
+- 最低支持 Windows 7 SP1;XP 不在支持范围内(需要 XP 专用工具集与另一套 API 降级)。
 - 采用系统级 DPI 感知:在不同缩放比例的显示器之间拖动不会自动重排,但窗口可手动缩放。
 - 托盘图标沿用素材原图的整体图案,16 px 下细节辨识度有限。
 - 设置保存在注册表 `HKCU\Software\PtFastQRcode`,不做多用户隔离之外的处理。

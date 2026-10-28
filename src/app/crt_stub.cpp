@@ -87,7 +87,7 @@ static PWSTR commandLineArguments() {
     return cursor;
 }
 
-extern "C" __declspec(noreturn) void __stdcall entryPoint() {
+extern "C" __declspec(noreturn) void __cdecl entryPoint() {
     runInitialisers();
     const int result = wWinMain(GetModuleHandleW(nullptr), nullptr, commandLineArguments(),
                                 SW_SHOW);
