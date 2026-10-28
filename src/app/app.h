@@ -65,6 +65,9 @@ extern Settings g_settings;
 bool systemPrefersDark();
 bool themeIsDark();
 int  defaultTheme();
+// WinUI 3 look needs the Fluent pieces Windows 10 1809+ ships (Segoe Fluent Icons,
+// system accent and dark surfaces). Older systems only get the classic Win32 skin.
+bool supportsWinUiStyle();
 inline int themeStyle(int theme) { return theme == 0 ? 0 : 1; }
 // 0 = classic, 1 = follow system, 2 = light, 3 = dark (resolved by themeIsDark()).
 inline bool themeIsDarkTheme(int theme) { return theme == 3; }

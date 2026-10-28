@@ -98,13 +98,20 @@ static std::wstring regReadString(HKEY key, const wchar_t* name, const std::wstr
 
 // Win7/8 have no Segoe Fluent Icons and no system dark mode, so the WinUI 3 skin cannot
 // look like itself there; the classic Win32 skin is the honest default on those systems.
-int defaultTheme() {
+bool supportsWinUiStyle() {
     OSVERSIONINFOEXW info = {};
     info.dwOSVersionInfoSize = sizeof(info);
     info.dwMajorVersion = 10;
-    const DWORDLONG condition = VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    const bool windows10 = VerifyVersionInfoW(&info, VER_MAJORVERSION, condition) != 0;
-    return windows10 ? 1 : 0;  // WinUI 3 following the system on Win10+, classic elsewhere
+    info.dwBuildNumber = 17763;  // Windows 10 1809: Fluent icons + system dark surfaces
+    DWORDLONG condition = VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL);
+    condition = VerSetConditionMask(condition, VER_MINORVERSION, VER_GREATER_EQUAL);
+    condition = VerSetConditionMask(condition, VER_BUILDNUMBER, VER_GREATER_EQUAL);
+    return VerifyVersionInfoW(&info, VER_MAJORVERSION | VER_MINORVERSION | VER_BUILDNUMBER,
+                              condition) != 0;
+}
+
+int defaultTheme() {
+    return supportsWinUiStyle() ? 1 : 0;  // WinUI 3 following the system, else classic
 }
 
 void loadSettings() {
@@ -152,6 +159,8 @@ void loadSettings() {
     g_settings.hotkeyMods = normalizeHotkeyMods(g_settings.hotkeyMods);
     g_settings.eccLevel = std::max(0, std::min(3, g_settings.eccLevel));
     g_settings.theme = std::max(0, std::min(3, g_settings.theme));
+    // Systems without the Fluent pieces only get the classic skin.
+    if (!supportsWinUiStyle()) g_settings.theme = 0;
     g_settings.qrSize = std::max(160, std::min(1200, g_settings.qrSize));
     g_settings.popupWidth = std::max(340, std::min(1400, g_settings.popupWidth));
     g_settings.popupHeight = std::max(400, std::min(1600, g_settings.popupHeight));

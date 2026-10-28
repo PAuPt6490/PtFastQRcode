@@ -266,7 +266,13 @@ void setChip(HWND hwnd, SettingsState* st, int index) {
 // Classic Win32 has no dark variant: it pins the colour mode to light and disables the
 // colour chips so the choice cannot contradict the style.
 void syncModeAvailability(SettingsState* st) {
-    const bool enabled = st->style != 0;
+    const bool winuiAvailable = supportsWinUiStyle();
+    if (!winuiAvailable) {
+        st->style = 0;
+        EnableWindow(st->styleChips[1], FALSE);
+        InvalidateRect(st->styleChips[1], nullptr, FALSE);
+    }
+    const bool enabled = winuiAvailable && st->style != 0;
     if (!enabled) st->mode = 0;  // classic is light-only
     for (int i = 0; i < 3; ++i) {
         EnableWindow(st->modeChips[i], enabled ? TRUE : FALSE);
@@ -275,7 +281,12 @@ void syncModeAvailability(SettingsState* st) {
 }
 
 void setStyleChip(SettingsState* st, int index) {
+    // Coming back from the classic skin starts again from the WinUI 3 default
+    // (follow system) rather than the light/dark that was left behind.
+    if (index == 1 && !supportsWinUiStyle()) return;  // not offered on this system
+    const int previous = st->style;
     st->style = index;
+    if (previous == 0 && index == 1) st->mode = 1;
     for (int i = 0; i < 2; ++i) InvalidateRect(st->styleChips[i], nullptr, FALSE);
     syncModeAvailability(st);
 }
