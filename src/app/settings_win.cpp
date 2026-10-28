@@ -374,26 +374,31 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
 
     RECT client;
     GetClientRect(hwnd, &client);
-    paintWindowBackdrop(hdc, client, true);
+    const bool nativeFrame = g_theme.flatClick;  // classic skin
+    paintWindowBackdrop(hdc, client, !nativeFrame);
     if (!rectsOverlap(dirty, client)) return;
 
     const int clientWidth = client.right;
     const int clientHeight = client.bottom;
 
-    RECT titleRect = {S(16), S(8), clientWidth - S(64), S(36)};
-    drawTextGdi(hdc, g_fonts.title, g_theme.text, L"设置", titleRect,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    const int dy = (g_settings.theme == 0) ? -S(40) : 0;  // no title strip with a native caption
+
+    if (!nativeFrame) {
+        RECT titleRect = {S(16), S(8), clientWidth - S(64), S(36)};
+        drawTextGdi(hdc, g_fonts.title, g_theme.text, L"设置", titleRect,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
 
     {
         // Header rule, one hairline per section, and the footer rule.
         HPEN pen = CreatePen(PS_SOLID, 1, g_theme.cardBorder);
         HGDIOBJ previous = SelectObject(hdc, pen);
         auto line = [&](int y) {
-            MoveToEx(hdc, S(16), y, nullptr);
-            LineTo(hdc, clientWidth - S(16) + 1, y);
+            MoveToEx(hdc, S(16), y + dy, nullptr);
+            LineTo(hdc, clientWidth - S(16) + 1, y + dy);
         };
-        line(S(48));
-        line(S(128));
+        if (!nativeFrame) line(S(48));
+        if (!nativeFrame) line(S(128));
         line(S(284));
         line(S(476));
         line(clientHeight - S(64));
@@ -403,7 +408,7 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
 
     auto label = [&](const wchar_t* text, int x, int y, int w, int h, HFONT font, COLORREF color,
                      UINT flags) {
-        RECT r = {S(x), S(y), S(x + w), S(y + h)};
+        RECT r = {S(x), S(y) + dy, S(x + w), S(y + h) + dy};
         drawTextGdi(hdc, font, color, text, r, flags);
     };
 
@@ -502,6 +507,20 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
                         S(672) + extraHeight};
     r.btnClose = {clientWidth - S(46), S(10), clientWidth - S(16), S(40)};
 
+    // With a real caption bar our own title strip is gone, so the content moves up.
+    if (g_settings.theme == 0) {
+        const int dy = -S(40);
+        RECT* rects[] = {&r.hotkey,    &r.btnResetHotkey, &r.sizeField, &r.sizeEdit,
+                         &r.sizeMinus, &r.sizePlus,      &r.dirField,  &r.dirEdit,
+                         &r.btnBrowse, &r.btnDefaults,   &r.btnCancel, &r.btnSave,
+                         &r.btnSaveRestart};
+        for (RECT* rect : rects) OffsetRect(rect, 0, dy);
+        for (auto& rect : r.toggles) OffsetRect(&rect, 0, dy);
+        for (auto& rect : r.ecc) OffsetRect(&rect, 0, dy);
+        for (auto& rect : r.style) OffsetRect(&rect, 0, dy);
+        for (auto& rect : r.mode) OffsetRect(&rect, 0, dy);
+    }
+
     place(st->hotkey, r.hotkey);
     place(st->btnResetHotkey, r.btnResetHotkey);
     for (int i = 0; i < 4; ++i) place(st->toggles[i], r.toggles[i]);
@@ -552,10 +571,11 @@ void createChildControls(HWND hwnd, SettingsState* st) {
         {&st->btnCancel, IDC_BTN_CANCEL, L"取消"},
         {&st->btnSave, IDC_BTN_SAVE, L"保存"},
         {&st->btnSaveRestart, IDC_BTN_SAVE_RESTART, L"保存并重启"},
-        {&st->btnClose, IDC_BTN_CLOSE, L""},
+        {g_settings.theme == 0 ? nullptr : &st->btnClose, IDC_BTN_CLOSE, L""},
     };
 
     for (auto& button : buttons) {
+        if (!button.target) continue;
         *button.target = CreateWindowExW(0, L"BUTTON", button.text,
                                          WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0,
                                          10, 10, hwnd, (HMENU)(INT_PTR)button.id, g_hinst, nullptr);
@@ -624,7 +644,8 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
             layoutSettings(hwnd, st);
             loadValues(hwnd, st);
 
-            applyWindowShape(hwnd);
+            if (g_settings.theme == 0) SetWindowRgn(hwnd, nullptr, TRUE);
+            else applyWindowShape(hwnd);
             return 0;
         }
 
@@ -861,9 +882,17 @@ HWND createSettingsWindow() {
     }
 
     ensureFonts();
-    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, kWndClassSettings, L"设置",
-                                WS_POPUP | WS_CLIPCHILDREN, 0, 0,
-                                S(kWidth), S(kHeight), nullptr, nullptr, g_hinst, nullptr);
+    // Without the WinUI skin the dialog is meant to look like a stock Windows dialog,
+    // so it gets a real caption bar instead of our own title row.
+    const bool nativeFrame = g_settings.theme == 0;  // classic = stock Windows dialog
+    const DWORD style = nativeFrame ? (WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_CLIPCHILDREN)
+                                    : (WS_POPUP | WS_CLIPCHILDREN);
+    // The layout is in client coordinates, so grow the window by its frame metrics.
+    RECT frame = {0, 0, S(kWidth), S(kHeight)};
+    AdjustWindowRectEx(&frame, style, FALSE, WS_EX_TOOLWINDOW);
+    HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, kWndClassSettings, L"设置", style, 0, 0,
+                                frame.right - frame.left, frame.bottom - frame.top, nullptr,
+                                nullptr, g_hinst, nullptr);
     g_settingsWnd = hwnd;
     g_settingsOpen = hwnd != nullptr;
     return hwnd;
@@ -880,7 +909,10 @@ void showSettingsWindow() {
 
     RECT workArea;
     SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0);
-    int width = S(kWidth), height = S(kHeight);
+    RECT windowRect = {0, 0, 0, 0};
+    GetWindowRect(g_settingsWnd, &windowRect);
+    int width = windowRect.right - windowRect.left;
+    int height = windowRect.bottom - windowRect.top;
     int x = workArea.left + ((workArea.right - workArea.left) - width) / 2;
     int y = workArea.top + ((workArea.bottom - workArea.top) - height) / 2;
     if (y < workArea.top + S(8)) y = workArea.top + S(8);

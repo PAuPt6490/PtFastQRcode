@@ -48,6 +48,12 @@ inline int S(int logical) { return (int)(logical * g_scale + 0.5f); }
 struct Settings {
     UINT hotkeyMods;
     UINT hotkeyVk;
+    UINT saveMods;   // save the QR image
+    UINT saveVk;
+    UINT copyMods;   // copy the QR image
+    UINT copyVk;
+    UINT closeMods;  // close the popup
+    UINT closeVk;
     bool closeOnBlur;
     bool autoPaste;
     bool closeAfterSave;

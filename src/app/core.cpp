@@ -117,6 +117,12 @@ int defaultTheme() {
 void loadSettings() {
     g_settings.hotkeyMods = MOD_CONTROL | MOD_ALT;
     g_settings.hotkeyVk = 'Q';
+    g_settings.saveMods = MOD_CONTROL;
+    g_settings.saveVk = 'S';
+    g_settings.copyMods = MOD_CONTROL;
+    g_settings.copyVk = 'C';
+    g_settings.closeMods = 0;
+    g_settings.closeVk = VK_ESCAPE;
     g_settings.closeOnBlur = true;
     g_settings.autoPaste = true;
     g_settings.closeAfterSave = true;
@@ -131,6 +137,12 @@ void loadSettings() {
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRegRoot, 0, KEY_READ, &key) == ERROR_SUCCESS) {
         g_settings.hotkeyMods = (UINT)regReadInt(key, L"HotkeyMods", (int)g_settings.hotkeyMods);
         g_settings.hotkeyVk = (UINT)regReadInt(key, L"HotkeyVk", (int)g_settings.hotkeyVk);
+        g_settings.saveMods = (UINT)regReadInt(key, L"SaveMods", (int)g_settings.saveMods);
+        g_settings.saveVk = (UINT)regReadInt(key, L"SaveVk", (int)g_settings.saveVk);
+        g_settings.copyMods = (UINT)regReadInt(key, L"CopyMods", (int)g_settings.copyMods);
+        g_settings.copyVk = (UINT)regReadInt(key, L"CopyVk", (int)g_settings.copyVk);
+        g_settings.closeMods = (UINT)regReadInt(key, L"CloseMods", (int)g_settings.closeMods);
+        g_settings.closeVk = (UINT)regReadInt(key, L"CloseVk", (int)g_settings.closeVk);
         g_settings.closeOnBlur = regReadBool(key, L"CloseOnBlur", g_settings.closeOnBlur);
         g_settings.autoPaste = regReadBool(key, L"AutoPaste", g_settings.autoPaste);
         g_settings.closeAfterSave = regReadBool(key, L"CloseAfterSave", g_settings.closeAfterSave);
@@ -156,6 +168,9 @@ void loadSettings() {
     }
 
     if (g_settings.hotkeyVk == 0) g_settings.hotkeyVk = 'Q';
+    if (g_settings.saveVk == 0) { g_settings.saveMods = MOD_CONTROL; g_settings.saveVk = 'S'; }
+    if (g_settings.copyVk == 0) { g_settings.copyMods = MOD_CONTROL; g_settings.copyVk = 'C'; }
+    if (g_settings.closeVk == 0) { g_settings.closeMods = 0; g_settings.closeVk = VK_ESCAPE; }
     g_settings.hotkeyMods = normalizeHotkeyMods(g_settings.hotkeyMods);
     g_settings.eccLevel = std::max(0, std::min(3, g_settings.eccLevel));
     g_settings.theme = std::max(0, std::min(3, g_settings.theme));
@@ -180,6 +195,12 @@ void saveSettings() {
 
     writeDword(L"HotkeyMods", g_settings.hotkeyMods);
     writeDword(L"HotkeyVk", g_settings.hotkeyVk);
+    writeDword(L"SaveMods", g_settings.saveMods);
+    writeDword(L"SaveVk", g_settings.saveVk);
+    writeDword(L"CopyMods", g_settings.copyMods);
+    writeDword(L"CopyVk", g_settings.copyVk);
+    writeDword(L"CloseMods", g_settings.closeMods);
+    writeDword(L"CloseVk", g_settings.closeVk);
     writeDword(L"CloseOnBlur", g_settings.closeOnBlur ? 1 : 0);
     writeDword(L"AutoPaste", g_settings.autoPaste ? 1 : 0);
     writeDword(L"CloseAfterSave", g_settings.closeAfterSave ? 1 : 0);
@@ -480,8 +501,19 @@ static const wchar_t* pickFontFamily() {
 }
 
 static HFONT makeFont(int pixelHeight, int weight) {
-    int delta = g_theme.flatClick ? -1 : 0;   // the classic look uses slightly tighter text
-    return CreateFontW(-(pixelHeight + delta), 0, 0, 0, weight, FALSE, FALSE, FALSE,
+    // The classic skin is a stock Windows dialog, so it uses the shell's own message font;
+    // that is what "adaptive" means here (DPI, theme and font substitution all come free).
+    if (g_theme.flatClick) {
+        NONCLIENTMETRICSW metrics = {};
+        metrics.cbSize = sizeof(metrics);
+        if (SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics, 0)) {
+            LOGFONTW font = metrics.lfMessageFont;
+            font.lfWeight = weight;
+            HFONT created = CreateFontIndirectW(&font);
+            if (created) return created;
+        }
+    }
+    return CreateFontW(-pixelHeight, 0, 0, 0, weight, FALSE, FALSE, FALSE,
                        DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                        DEFAULT_PITCH | FF_DONTCARE, pickFontFamily());
 }

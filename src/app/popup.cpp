@@ -348,8 +348,10 @@ void paintPopup(HWND hwnd, HDC hdc, const RECT& dirty) {
 
     if (rectsOverlap(dirty, st->layout.hint)) {
         RECT hintRect = st->layout.hint;
-        drawTextGdi(hdc, g_fonts.hint, g_theme.textDim,
-                    L"Esc 关闭    Ctrl+S 保存    Ctrl+D 复制图片", hintRect,
+        std::wstring hint = formatHotkey(g_settings.closeMods, g_settings.closeVk) + L" 关闭    " +
+                            formatHotkey(g_settings.saveMods, g_settings.saveVk) + L" 保存    " +
+                            formatHotkey(g_settings.copyMods, g_settings.copyVk) + L" 复制图片";
+        drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, hint.c_str(), hintRect,
                     DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 }

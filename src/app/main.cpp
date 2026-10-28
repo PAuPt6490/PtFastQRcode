@@ -313,10 +313,11 @@ void computeScale() {
 }
 
 void buildAccelerators() {
+    // Shortcuts come from the settings; copy defaults to Ctrl+C.
     ACCEL popupKeys[] = {
-        {FVIRTKEY | FCONTROL, 'S', ID_POPUP_SAVE},
-        {FVIRTKEY | FCONTROL, 'D', ID_POPUP_COPY},
-        {FVIRTKEY, VK_ESCAPE, ID_POPUP_CLOSE},
+        {(BYTE)(g_settings.saveMods | FVIRTKEY), (WORD)g_settings.saveVk, ID_POPUP_SAVE},
+        {(BYTE)(g_settings.copyMods | FVIRTKEY), (WORD)g_settings.copyVk, ID_POPUP_COPY},
+        {(BYTE)(g_settings.closeMods | FVIRTKEY), (WORD)g_settings.closeVk, ID_POPUP_CLOSE},
     };
     g_popupAccel = CreateAcceleratorTableW(popupKeys, ARRAYSIZE(popupKeys));
 
@@ -530,6 +531,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     bool startHidden = tu::contains(arguments.c_str(), L"--startup");
     bool requestShow = tu::contains(arguments.c_str(), L"--show");
     bool restartMode = tu::contains(arguments.c_str(), L"--restart");
+    const bool openSettings = tu::contains(arguments.c_str(), L"--settings");
 
     // A restarted instance waits briefly for its predecessor to release the mutex.
     HANDLE mutex = nullptr;
@@ -579,6 +581,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
         MessageBoxW(nullptr, message.c_str(), kAppName, MB_ICONWARNING | MB_OK);
     }
 
+    if (openSettings) showSettingsWindow();
     if (requestShow) {
         showPopup();
     } else if (!startHidden) {
