@@ -74,9 +74,9 @@ function Stop-App {
     Start-Sleep -Milliseconds 400
 }
 
-function Set-Look([int]$style, [int]$mode) {
-    Set-ItemProperty 'HKCU:\Software\PtFastQRcode' -Name UiStyle -Value $style -Type DWord
-    Set-ItemProperty 'HKCU:\Software\PtFastQRcode' -Name ThemeMode -Value $mode -Type DWord
+function Set-Theme([int]$theme) {
+    # 0 = Win32 classic, 1 = follow system, 2 = WinUI light, 3 = WinUI dark
+    Set-ItemProperty 'HKCU:\Software\PtFastQRcode' -Name Theme -Value $theme -Type DWord
 }
 
 function Start-App([string]$arguments) {
@@ -88,19 +88,19 @@ $previous = Get-ItemProperty 'HKCU:\Software\PtFastQRcode'
 Set-Clipboard -Value 'https://github.com/PAuPt6490/PtFastQRcode'
 
 # 1. 默认外观(WinUI 3 + 跟随系统)
-Stop-App; Set-Look 1 0; Start-App '--show'
+Stop-App; Set-Theme 1; Start-App '--show'
 Capture-Window 'PtFastQRcodePopup' 'docs\popup-default.png'
 
 # 2. 深色(WinUI 3 + 深色)
-Stop-App; Set-Look 1 2; Start-App '--show'
+Stop-App; Set-Theme 3; Start-App '--show'
 Capture-Window 'PtFastQRcodePopup' 'docs\popup-dark.png'
 
 # 3. Win32 经典(浅色)
-Stop-App; Set-Look 0 1; Start-App '--show'
+Stop-App; Set-Theme 0; Start-App '--show'
 Capture-Window 'PtFastQRcodePopup' 'docs\popup-win32.png'
 
 # 4. 设置窗口(深色,展示两种风格)
-Stop-App; Set-Look 1 2; Start-App '--show'
+Stop-App; Set-Theme 3; Start-App '--show'
 Start-Sleep -Milliseconds 600
 $popup = Find-Class 'PtFastQRcodePopup'
 [Shot.Api]::PostMessage($popup, 0x0111, [IntPtr]2005, [IntPtr]::Zero) | Out-Null
@@ -108,7 +108,7 @@ Start-Sleep -Milliseconds 1000
 Capture-Window 'PtFastQRcodeSettings' 'docs\settings.png'
 
 # 5. 托盘菜单(菜单必须抓屏,它本身总在最前)
-Stop-App; Set-Look 0 1; Start-App '--startup'
+Stop-App; Set-Theme 0; Start-App '--startup'
 $controller = Find-Class 'PtFastQRcodeController'
 [Shot.Api]::SetCursorPos(900, 700) | Out-Null
 Start-Sleep -Milliseconds 200
@@ -126,6 +126,6 @@ Add-Type -Namespace ShotKey -Name A -MemberDefinition '[DllImport("user32.dll")]
 
 # 恢复用户原来的外观设置并启动
 Stop-App
-Set-Look $previous.UiStyle $previous.ThemeMode
+Set-Theme ([int]$previous.Theme)
 Start-App '--show'
-"restored look to style=$($previous.UiStyle) mode=$($previous.ThemeMode)"
+"restored theme to $($previous.Theme)"

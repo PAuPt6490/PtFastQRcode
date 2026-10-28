@@ -439,8 +439,9 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     label(L"颜色模式", 16, 540, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    // Width is in design units (label() scales it); clientWidth is already physical.
     label(L"Win32 走系统主题引擎(固定浅色);WinUI 3 用系统主色与官方图标字体;点“保存并重启”立即生效。",
-          16, 594, clientWidth - S(180), 18, g_fonts.hint, g_theme.textDim,
+          16, 594, 470, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     {
         // clientWidth is already in physical pixels, so draw it directly instead of via label().
