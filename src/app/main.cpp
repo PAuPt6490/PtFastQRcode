@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include <commdlg.h>   // types only: comdlg32 is resolved at run time
+
 #include "text_util.h"
 
 #include <shellapi.h>
@@ -397,6 +399,75 @@ void quitApp() {
     PostQuitMessage(0);
 }
 
+// comdlg32 is resolved on demand: importing it would load the dialog stack into the
+// tray process at startup, which is exactly what running the dialog elsewhere avoids.
+typedef BOOL(WINAPI* GetSaveFileNameWFn)(LPOPENFILENAMEW);
+
+static GetSaveFileNameWFn resolveSaveDialog() {
+    static GetSaveFileNameWFn resolve = nullptr;
+    if (!resolve) {
+        HMODULE module = LoadLibraryW(L"comdlg32.dll");
+        if (module) resolve = (GetSaveFileNameWFn)GetProcAddress(module, "GetSaveFileNameW");
+    }
+    return resolve;
+}
+
+// Reads one quoted argument starting at cursor; advances the cursor past it.
+static std::wstring takeQuotedArgument(const wchar_t*& cursor) {
+    while (*cursor == L' ' || *cursor == L'\t') ++cursor;
+    std::wstring value;
+    if (*cursor == L'"') {
+        ++cursor;
+        while (*cursor && *cursor != L'"') value.push_back(*cursor++);
+        if (*cursor == L'"') ++cursor;
+    } else {
+        while (*cursor && *cursor != L' ' && *cursor != L'\t') value.push_back(*cursor++);
+    }
+    return value;
+}
+
+// Save-dialog helper: runs in its own process so the shell extensions the common dialog
+// loads are released the moment it exits. Writes the chosen path (UTF-16) to resultPath.
+static int runSaveDialogHelper(const std::wstring& arguments) {
+    const wchar_t* cursor = arguments.c_str();
+    takeQuotedArgument(cursor);  // --pick-save
+    const std::wstring resultPath = takeQuotedArgument(cursor);
+    const std::wstring initialDir = takeQuotedArgument(cursor);
+    const std::wstring suggestedName = takeQuotedArgument(cursor);
+    if (resultPath.empty()) return 1;
+
+    ensureCom();
+
+    std::vector<wchar_t> buffer(MAX_PATH * 4, 0);
+    const std::wstring initial =
+        initialDir.empty() ? suggestedName : initialDir + L"\\" + suggestedName;
+    tu::copy(buffer.data(), buffer.size(), initial.c_str());
+
+    OPENFILENAMEW dialog = {};
+    dialog.lStructSize = sizeof(dialog);
+    dialog.lpstrFilter = L"PNG 图片 (*.png)\0*.png\0所有文件 (*.*)\0*.*\0";
+    dialog.lpstrFile = buffer.data();
+    dialog.nMaxFile = (DWORD)buffer.size();
+    dialog.lpstrDefExt = L"png";
+    dialog.lpstrInitialDir = initialDir.c_str();
+    dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+    const GetSaveFileNameWFn showDialog = resolveSaveDialog();
+    const BOOL accepted = showDialog ? showDialog(&dialog) : FALSE;
+
+    HANDLE file = CreateFileW(resultPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        if (accepted) {
+            DWORD written = 0;
+            WriteFile(file, buffer.data(), (DWORD)(wcslen(buffer.data()) * sizeof(wchar_t)),
+                      &written, nullptr);
+        }
+        CloseHandle(file);
+    }
+    return 0;
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
     g_hinst = instance;
     (void)showCommand;
@@ -404,12 +475,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     enableDpiAwareness();
     computeScale();
 
-    OleInitialize(nullptr);
+    // COM stays uninitialised until something needs it (see ensureCom).
 
     loadSettings();
     applyTheme(g_settings.uiStyle);
 
     std::wstring arguments = commandLine ? commandLine : L"";
+    if (tu::contains(arguments.c_str(), L"--pick-save")) return runSaveDialogHelper(arguments);
     bool startHidden = tu::contains(arguments.c_str(), L"--startup");
     bool requestShow = tu::contains(arguments.c_str(), L"--show");
     bool restartMode = tu::contains(arguments.c_str(), L"--restart");
@@ -435,7 +507,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
                         MB_ICONWARNING | MB_OK);
         }
         if (mutex) CloseHandle(mutex);
-        OleUninitialize();
+        releaseCom();
         return 0;
     }
 
@@ -486,7 +558,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     if (g_popupAccel) DestroyAcceleratorTable(g_popupAccel);
     if (g_settingsAccel) DestroyAcceleratorTable(g_settingsAccel);
     destroyFonts();
-    OleUninitialize();
+    releaseCom();
     if (mutex) CloseHandle(mutex);
     return (int)msg.wParam;
 }

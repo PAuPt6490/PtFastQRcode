@@ -21,6 +21,7 @@ extern const wchar_t* kWndClassHotkey;
 
 #define WM_APP_SHOW (WM_APP + 10)
 #define WM_APP_TRAY (WM_APP + 11)
+#define WM_APP_DESTROY (WM_APP + 12)
 #define WM_APP_HOTKEY_CHANGED (WM_APP + 12)
 
 // Control ids that the message loop needs for its accelerator tables.
@@ -111,6 +112,11 @@ struct Fonts {
 };
 
 extern Fonts g_fonts;
+// COM is initialised on first use (WIC, folder picker, dialogs), not at startup:
+// starting with OleInitialize would load ole32/combase and keep them resident.
+bool ensureCom();
+void releaseCom();
+
 // Fonts are created on first window creation, not at startup.
 void ensureFonts();
 void destroyFonts();
@@ -148,6 +154,11 @@ bool paintIsBuffered();
 
 // Paints the symbol into 'area' (a 4 module quiet zone is added inside the modules).
 void drawQrSymbol(HDC hdc, const RECT& area, const qr::Symbol& symbol, int padding);
+
+// Shows the save dialog in a helper process (same exe, --pick-save) so the shell
+// extensions it loads never stay resident in this one.
+bool pickSavePathInChild(const std::wstring& initialDir, const std::wstring& suggestedName,
+                         std::wstring& chosenPath);
 
 // Renders the symbol into a 32bpp DIB and writes it as PNG through WIC.
 bool saveQrPng(const qr::Symbol& symbol, int pixelSize, const std::wstring& path);

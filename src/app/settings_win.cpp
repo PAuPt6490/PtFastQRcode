@@ -270,6 +270,7 @@ void setStyleChip(SettingsState* st, int index) {
 }
 
 void browseForFolder(HWND hwnd, SettingsState* st) {
+    if (!ensureCom()) return;
     IFileOpenDialog* dialog = nullptr;
     if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(&dialog))))

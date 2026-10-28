@@ -72,7 +72,7 @@ $linkArgs = @(
     '/NODEFAULTLIB', '/ENTRY:entryPoint',
     "/OUT:$exePath"
 ) + $LibFlags + $objects + @($resPath) + @(
-    'kernel32.lib', 'user32.lib', 'gdi32.lib', 'shell32.lib', 'shlwapi.lib',
+    'kernel32.lib', 'user32.lib', 'gdi32.lib', 'shell32.lib',
     'ole32.lib', 'comctl32.lib', 'uuid.lib', 'advapi32.lib', 'uxtheme.lib',
     'windowscodecs.lib'
 )

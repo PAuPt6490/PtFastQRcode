@@ -402,6 +402,24 @@ void paintFieldFrame(HWND hwnd, HDC hdc, const RECT& rc, int radius) {
     drawRoundRect(hdc, rc, radius, g_theme.fieldBg, g_theme.fieldBorder, 1);
 }
 
+// ------------------------------------------------------------------ COM
+
+namespace {
+bool g_comReady = false;
+}
+
+bool ensureCom() {
+    if (g_comReady) return true;
+    g_comReady = SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE));
+    return g_comReady;
+}
+
+void releaseCom() {
+    if (!g_comReady) return;
+    CoUninitialize();
+    g_comReady = false;
+}
+
 // ------------------------------------------------------------------ fonts
 
 static const wchar_t* pickFontFamily() {

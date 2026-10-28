@@ -60,6 +60,7 @@ bool createSurface(int size, const qr::Symbol& symbol, Surface& surface) {
 
 // PNG through WIC: no GDI+, no third-party encoder.
 bool writePng(const Surface& surface, const std::wstring& path) {
+    if (!ensureCom()) return false;
     IWICImagingFactory* factory = nullptr;
     if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
                                 IID_PPV_ARGS(&factory))))

@@ -111,18 +111,73 @@ std::wstring defaultStatusText() {
                                   : L"点击窗口外不关闭  ·  Esc 退出";
 }
 
-// comdlg32 is loaded on first save instead of at startup: one DLL less in the tray-only state.
-typedef BOOL(WINAPI* GetSaveFileNameWFn)(LPOPENFILENAMEW);
+// The common dialog pulls Explorer shell extensions into whichever process opens it and
+// COM keeps them loaded (~10 MB that never comes back). So the dialog runs in a
+// short-lived copy of this executable instead, and only the chosen path comes back.
+bool pickSavePathInChild(const std::wstring& initialDir, const std::wstring& suggestedName,
+                         std::wstring& chosenPath) {
+    std::vector<wchar_t> temporary(MAX_PATH, 0);
+    if (!GetTempPathW(MAX_PATH, temporary.data())) return false;
+    std::vector<wchar_t> resultPath(MAX_PATH, 0);
+    if (!GetTempFileNameW(temporary.data(), L"ptq", 0, resultPath.data())) return false;
 
-BOOL pickSavePath(OPENFILENAMEW* dialog) {
-    static GetSaveFileNameWFn resolve = nullptr;
-    static bool resolved = false;
-    if (!resolved) {
-        resolved = true;
-        HMODULE module = LoadLibraryW(L"comdlg32.dll");
-        if (module) resolve = (GetSaveFileNameWFn)GetProcAddress(module, "GetSaveFileNameW");
+    std::vector<wchar_t> module(MAX_PATH, 0);
+    if (!GetModuleFileNameW(nullptr, module.data(), MAX_PATH)) {
+        DeleteFileW(resultPath.data());
+        return false;
     }
-    return resolve && resolve(dialog);
+
+    std::wstring commandLine = L"\"" + std::wstring(module.data()) + L"\" --pick-save \"" +
+                               std::wstring(resultPath.data()) + L"\" \"" + initialDir + L"\" \"" +
+                               suggestedName + L"\"";
+
+    STARTUPINFOW startup = {sizeof(startup)};
+    PROCESS_INFORMATION process = {};
+    std::vector<wchar_t> mutableCommand(commandLine.begin(), commandLine.end());
+    mutableCommand.push_back(0);
+
+    if (!CreateProcessW(nullptr, mutableCommand.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW,
+                        nullptr, nullptr, &startup, &process)) {
+        DeleteFileW(resultPath.data());
+        return false;
+    }
+
+    AllowSetForegroundWindow(process.dwProcessId);
+
+    // Keep pumping messages: the popup stays responsive and cannot be torn down while the
+    // dialog is up (callers set suppressDeactivate).
+    for (;;) {
+        DWORD wait = MsgWaitForMultipleObjects(1, &process.hProcess, FALSE, INFINITE, QS_ALLINPUT);
+        if (wait == WAIT_OBJECT_0) break;
+        if (wait == WAIT_OBJECT_0 + 1) {
+            MSG message;
+            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE)) {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        } else {
+            break;
+        }
+    }
+
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+
+    bool picked = false;
+    HANDLE file = CreateFileW(resultPath.data(), GENERIC_READ, FILE_SHARE_READ, nullptr,
+                              OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        std::vector<wchar_t> buffer(MAX_PATH * 4, 0);
+        DWORD read = 0;
+        const DWORD limit = (DWORD)(buffer.size() * sizeof(wchar_t) - sizeof(wchar_t));
+        if (ReadFile(file, buffer.data(), limit, &read, nullptr) && read > 0) {
+            chosenPath.assign(buffer.data());
+            picked = !chosenPath.empty();
+        }
+        CloseHandle(file);
+    }
+    DeleteFileW(resultPath.data());
+    return picked;
 }
 
 std::wstring baseName(const std::wstring& path) {
@@ -312,25 +367,12 @@ void savePng(HWND hwnd) {
     ensureDirectory(directory);
     std::wstring suggested = directory + L"\\" + defaultFileNameFor(text);
 
-    std::vector<wchar_t> buffer(MAX_PATH * 4, 0);
-    tu::copy(buffer.data(), buffer.size(), suggested.c_str());
-
-    OPENFILENAMEW dialog = {};
-    dialog.lStructSize = sizeof(dialog);
-    dialog.hwndOwner = hwnd;
-    dialog.lpstrFilter = L"PNG 图片 (*.png)\0*.png\0所有文件 (*.*)\0*.*\0";
-    dialog.lpstrFile = buffer.data();
-    dialog.nMaxFile = (DWORD)buffer.size();
-    dialog.lpstrDefExt = L"png";
-    dialog.lpstrInitialDir = directory.c_str();
-    dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-
     st->suppressDeactivate = true;
-    const BOOL accepted = pickSavePath(&dialog);
+    std::wstring path;
+    const bool accepted = pickSavePathInChild(directory, defaultFileNameFor(text), path);
     st->suppressDeactivate = false;
     if (!accepted) return;
 
-    std::wstring path = buffer.data();
     const bool saved = saveQrPng(st->symbol, S(g_settings.qrSize), path);
 
     if (saved) {
@@ -369,6 +411,20 @@ void pasteFromClipboard(HWND hwnd) {
     setStatus(hwnd, st, L"已从剪贴板粘贴", false);
 }
 
+// Returns the pages freed by tearing the window down: compact the heap first so the
+// commit charge actually drops, then empty the working set.
+void trimProcessMemory() {
+    HEAP_OPTIMIZE_RESOURCES_INFORMATION optimize;
+    ZeroMemory(&optimize, sizeof(optimize));
+    optimize.Version = HEAP_OPTIMIZE_RESOURCES_CURRENT_VERSION;
+    HeapSetInformation(GetProcessHeap(), (HEAP_INFORMATION_CLASS)HeapOptimizeResources, &optimize,
+                       sizeof(optimize));
+    SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+}
+
+// Hiding also destroys the window: a hidden popup would otherwise keep its edit control,
+// fonts and layout strings resident, so returning to the tray never fell back fully.
+// The window is hidden immediately (no flicker) and destroyed from the message loop.
 void hideWindow(HWND hwnd) {
     PopupState* st = getState(hwnd);
     if (st) {
@@ -376,9 +432,10 @@ void hideWindow(HWND hwnd) {
         KillTimer(hwnd, TIMER_STATUS);
         KillTimer(hwnd, TIMER_HIDE);
         st->message.clear();
-        st->suppressDeactivate = false;
+        st->suppressDeactivate = true;
     }
     ShowWindow(hwnd, SW_HIDE);
+    PostMessageW(hwnd, WM_APP_DESTROY, 0, 0);
 }
 
 LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -586,6 +643,11 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
 
         case WM_CLOSE:
             hideWindow(hwnd);
+            return 0;
+
+        case WM_APP_DESTROY:
+            DestroyWindow(hwnd);
+            trimProcessMemory();
             return 0;
 
         case WM_SETTINGCHANGE:
