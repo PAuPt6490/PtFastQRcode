@@ -98,12 +98,13 @@ static std::wstring regReadString(HKEY key, const wchar_t* name, const std::wstr
 
 // Win7/8 have no Segoe Fluent Icons and no system dark mode, so the WinUI 3 skin cannot
 // look like itself there; the classic Win32 skin is the honest default on those systems.
-static int defaultUiStyle() {
+int defaultTheme() {
     OSVERSIONINFOEXW info = {};
     info.dwOSVersionInfoSize = sizeof(info);
     info.dwMajorVersion = 10;
     const DWORDLONG condition = VerSetConditionMask(0, VER_MAJORVERSION, VER_GREATER_EQUAL);
-    return VerifyVersionInfoW(&info, VER_MAJORVERSION, condition) ? 1 : 0;
+    const bool windows10 = VerifyVersionInfoW(&info, VER_MAJORVERSION, condition) != 0;
+    return windows10 ? 2 : 1;  // WinUI 3 light on Win10+, classic on older systems
 }
 
 void loadSettings() {
@@ -114,8 +115,7 @@ void loadSettings() {
     g_settings.closeAfterSave = true;
     g_settings.eccLevel = 1;
     g_settings.qrSize = 360;
-    g_settings.uiStyle = defaultUiStyle();
-    g_settings.themeMode = 0;
+    g_settings.theme = defaultTheme();
     g_settings.popupWidth = 400;
     g_settings.popupHeight = 470;
     g_settings.saveDir = defaultSaveDir();
@@ -129,8 +129,18 @@ void loadSettings() {
         g_settings.closeAfterSave = regReadBool(key, L"CloseAfterSave", g_settings.closeAfterSave);
         g_settings.eccLevel = regReadInt(key, L"EccLevel", g_settings.eccLevel);
         g_settings.qrSize = regReadInt(key, L"QrSize", g_settings.qrSize);
-        g_settings.uiStyle = regReadInt(key, L"UiStyle", g_settings.uiStyle);
-        g_settings.themeMode = regReadInt(key, L"ThemeMode", g_settings.themeMode);
+        // One value decides everything: 1 = classic, 2 = WinUI 3 light, 3 = WinUI 3 dark.
+        // Older builds stored two values; migrate them on first run.
+        const int theme = regReadInt(key, L"Theme", 0);
+        if (theme >= 1 && theme <= 3) {
+            g_settings.theme = theme;
+        } else {
+            const int legacyStyle = regReadInt(key, L"UiStyle", -1);
+            const int legacyMode = regReadInt(key, L"ThemeMode", -1);
+            if (legacyStyle >= 0) {
+                g_settings.theme = legacyStyle == 0 ? 1 : (legacyMode == 2 ? 3 : 2);
+            }
+        }
         g_settings.popupWidth = regReadInt(key, L"PopupWidth", g_settings.popupWidth);
         g_settings.popupHeight = regReadInt(key, L"PopupHeight", g_settings.popupHeight);
         g_settings.saveDir = regReadString(key, L"SaveDir", g_settings.saveDir);
@@ -140,8 +150,7 @@ void loadSettings() {
     if (g_settings.hotkeyVk == 0) g_settings.hotkeyVk = 'Q';
     g_settings.hotkeyMods = normalizeHotkeyMods(g_settings.hotkeyMods);
     g_settings.eccLevel = std::max(0, std::min(3, g_settings.eccLevel));
-    if (g_settings.uiStyle > 1) g_settings.uiStyle = 1;  // UWP style was removed
-    g_settings.themeMode = std::max(0, std::min(2, g_settings.themeMode));
+    g_settings.theme = std::max(1, std::min(3, g_settings.theme));
     g_settings.qrSize = std::max(160, std::min(1200, g_settings.qrSize));
     g_settings.popupWidth = std::max(340, std::min(1400, g_settings.popupWidth));
     g_settings.popupHeight = std::max(400, std::min(1600, g_settings.popupHeight));
@@ -166,8 +175,9 @@ void saveSettings() {
     writeDword(L"CloseAfterSave", g_settings.closeAfterSave ? 1 : 0);
     writeDword(L"EccLevel", (DWORD)g_settings.eccLevel);
     writeDword(L"QrSize", (DWORD)g_settings.qrSize);
-    writeDword(L"UiStyle", (DWORD)g_settings.uiStyle);
-    writeDword(L"ThemeMode", (DWORD)g_settings.themeMode);
+    writeDword(L"Theme", (DWORD)g_settings.theme);
+    RegDeleteValueW(key, L"UiStyle");
+    RegDeleteValueW(key, L"ThemeMode");
     writeDword(L"PopupWidth", (DWORD)g_settings.popupWidth);
     writeDword(L"PopupHeight", (DWORD)g_settings.popupHeight);
     RegSetValueExW(key, L"SaveDir", 0, REG_SZ, (const BYTE*)g_settings.saveDir.c_str(),
@@ -259,13 +269,7 @@ static COLORREF lighten(COLORREF color, int amount) {
 }
 
 // Resolves "follow system" into a concrete light/dark decision.
-bool themeIsDark() {
-    switch (g_settings.themeMode) {
-        case 1: return false;
-        case 2: return true;
-        default: return systemPrefersDark();
-    }
-}
+bool themeIsDark() { return themeIsDarkTheme(g_settings.theme); }
 
 static void applyFluentPalette(bool dark) {
     if (dark) {
@@ -299,10 +303,11 @@ static void applyFluentPalette(bool dark) {
     g_theme.dark = dark;
 }
 
-void applyTheme(int style) {
-    g_settings.uiStyle = std::max(0, std::min(1, style));
-    g_theme = kThemes[g_settings.uiStyle];
-    const bool dark = themeIsDark();
+void applyTheme(int theme) {
+    g_settings.theme = std::max(1, std::min(3, theme));
+    const int style = themeStyle(g_settings.theme);
+    g_theme = kThemes[style];
+    const bool dark = themeIsDarkTheme(g_settings.theme);
     g_theme.dark = dark;
 
     if (g_theme.flatClick) {

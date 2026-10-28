@@ -119,7 +119,7 @@ struct SettingsState {
     bool toggleValues[4] = {true, true, true, false};
     int ecc = 1;
     int style = 1;
-    int themeMode = 0;
+    bool dark = false;
     int qrSize = 360;
     UINT mods = MOD_CONTROL | MOD_ALT;
     UINT vk = 'Q';
@@ -263,10 +263,21 @@ void setChip(HWND hwnd, SettingsState* st, int index) {
     (void)hwnd;
 }
 
+// Classic Win32 has no dark variant: it pins the colour mode to light and disables the
+// colour chips so the choice cannot contradict the style.
+void syncModeAvailability(SettingsState* st) {
+    const bool enabled = st->style != 0;
+    if (!enabled) st->dark = false;  // classic is light-only
+    for (int i = 0; i < 3; ++i) {
+        EnableWindow(st->modeChips[i], enabled ? TRUE : FALSE);
+        InvalidateRect(st->modeChips[i], nullptr, FALSE);
+    }
+}
+
 void setStyleChip(SettingsState* st, int index) {
     st->style = index;
     for (int i = 0; i < 2; ++i) InvalidateRect(st->styleChips[i], nullptr, FALSE);
-    for (int i = 0; i < 3; ++i) InvalidateRect(st->modeChips[i], nullptr, FALSE);
+    syncModeAvailability(st);
 }
 
 void browseForFolder(HWND hwnd, SettingsState* st) {
@@ -329,8 +340,7 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
     g_settings.autoPaste = st->toggleValues[1];
     g_settings.closeAfterSave = st->toggleValues[2];
     g_settings.eccLevel = st->ecc;
-    g_settings.uiStyle = st->style;
-    g_settings.themeMode = st->themeMode;
+    g_settings.theme = st->style == 0 ? 1 : (st->dark ? 3 : 2);
     g_settings.qrSize = size;
     g_settings.saveDir = directory;
     ensureDirectory(g_settings.saveDir);
@@ -413,7 +423,7 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     label(L"颜色模式", 16, 540, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"Win32 走系统主题引擎;WinUI 3 用系统主色与官方图标字体;点“保存并重启”立即生效。",
+    label(L"Win32 走系统主题引擎(固定浅色);WinUI 3 用系统主色与官方图标字体;点“保存并重启”立即生效。",
           16, 594, clientWidth - S(180), 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     {
@@ -491,7 +501,7 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
     place(st->dirEdit, r.dirEdit);
     place(st->btnBrowse, r.btnBrowse);
     for (int i = 0; i < 2; ++i) place(st->styleChips[i], r.style[i]);
-    for (int i = 0; i < 3; ++i) place(st->modeChips[i], r.mode[i]);
+    for (int i = 0; i < 2; ++i) place(st->modeChips[i], r.mode[i]);
     place(st->btnDefaults, r.btnDefaults);
     place(st->btnCancel, r.btnCancel);
     place(st->btnSave, r.btnSave);
@@ -524,9 +534,8 @@ void createChildControls(HWND hwnd, SettingsState* st) {
         {&st->btnBrowse, IDC_BTN_BROWSE, L"浏览…"},
         {&st->styleChips[0], IDC_STYLE_WIN32, L"Win32 经典"},
         {&st->styleChips[1], IDC_STYLE_WINUI, L"WinUI 3"},
-        {&st->modeChips[0], IDC_MODE_SYSTEM, L"跟随系统"},
-        {&st->modeChips[1], IDC_MODE_LIGHT, L"浅色"},
-        {&st->modeChips[2], IDC_MODE_DARK, L"深色"},
+        {&st->modeChips[0], IDC_MODE_LIGHT, L"浅色"},
+        {&st->modeChips[1], IDC_MODE_DARK, L"深色"},
         {&st->btnDefaults, IDC_BTN_DEFAULTS, L"恢复默认"},
         {&st->btnCancel, IDC_BTN_CANCEL, L"取消"},
         {&st->btnSave, IDC_BTN_SAVE, L"保存"},
@@ -572,10 +581,11 @@ void loadValues(HWND hwnd, SettingsState* st) {
     st->toggleValues[2] = g_settings.closeAfterSave;
     st->toggleValues[3] = g_settings.autostart;
     st->ecc = g_settings.eccLevel;
-    st->style = g_settings.uiStyle;
-    st->themeMode = g_settings.themeMode;
+    st->style = themeStyle(g_settings.theme);
+    st->dark = themeIsDarkTheme(g_settings.theme);
     st->qrSize = g_settings.qrSize;
     st->dir = g_settings.saveDir;
+    syncModeAvailability(st);
 
     for (int i = 0; i < 4; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
     for (int i = 0; i < 4; ++i) InvalidateRect(st->eccChips[i], nullptr, FALSE);
@@ -591,7 +601,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
         case WM_CREATE: {
             st = new SettingsState();
             st->ecc = g_settings.eccLevel;
-            st->style = g_settings.uiStyle;
+            st->style = themeStyle(g_settings.theme);
             st->qrSize = g_settings.qrSize;
             st->dir = g_settings.saveDir;
             st->mods = g_settings.hotkeyMods;
@@ -659,9 +669,8 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                     case IDC_ECC_H: checkedState = st->ecc == 3; break;
                     case IDC_STYLE_WIN32: checkedState = st->style == 0; break;
                     case IDC_STYLE_WINUI: checkedState = st->style == 1; break;
-                    case IDC_MODE_SYSTEM: checkedState = st->themeMode == 0; break;
-                    case IDC_MODE_LIGHT: checkedState = st->themeMode == 1; break;
-                    case IDC_MODE_DARK: checkedState = st->themeMode == 2; break;
+                    case IDC_MODE_LIGHT: checkedState = !st->dark; break;
+                    case IDC_MODE_DARK: checkedState = st->dark; break;
                     default: break;
                 }
                 drawButtonSpec(dis, *spec, checkedState);
@@ -717,7 +726,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 
             const int eccIds[4] = {IDC_ECC_L, IDC_ECC_M, IDC_ECC_Q, IDC_ECC_H};
             const int styleIds[2] = {IDC_STYLE_WIN32, IDC_STYLE_WINUI};
-            const int modeIds[3] = {IDC_MODE_SYSTEM, IDC_MODE_LIGHT, IDC_MODE_DARK};
+            const int modeIds[2] = {IDC_MODE_LIGHT, IDC_MODE_DARK};
 
             int eccIndex = chipIndexForId(id, eccIds, 4);
             if (eccIndex >= 0) {
@@ -729,10 +738,11 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                 setStyleChip(st, styleIndex);
                 return 0;
             }
-            int modeIndex = chipIndexForId(id, modeIds, 3);
+            int modeIndex = chipIndexForId(id, modeIds, 2);
             if (modeIndex >= 0) {
-                st->themeMode = modeIndex;
-                for (int i = 0; i < 3; ++i) InvalidateRect(st->modeChips[i], nullptr, FALSE);
+                if (st->style == 0) return 0;  // classic is light-only
+                st->dark = modeIndex != 0;
+                for (int i = 0; i < 2; ++i) InvalidateRect(st->modeChips[i], nullptr, FALSE);
                 return 0;
             }
 
@@ -767,8 +777,8 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                     for (int i = 0; i < 4; ++i) st->toggleValues[i] = (i != 3);
                     st->toggleValues[3] = false;
                     st->ecc = 1;
-                    st->style = 1;
-                    st->themeMode = 0;
+                    st->style = themeStyle(defaultTheme());
+                    st->dark = false;
                     st->qrSize = 360;
                     st->dir = defaultSaveDir();
                     g_captureMods = MOD_CONTROL | MOD_ALT;

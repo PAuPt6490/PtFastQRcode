@@ -9,6 +9,15 @@
 
 namespace {
 
+COLORREF blendColors(COLORREF foreground, COLORREF background, float amount) {
+    const auto mix = [amount](int a, int b) {
+        return (int)(b + (a - b) * amount + 0.5f);
+    };
+    return RGB(mix(GetRValue(foreground), GetRValue(background)),
+               mix(GetGValue(foreground), GetGValue(background)),
+               mix(GetBValue(foreground), GetBValue(background)));
+}
+
 COLORREF shade(COLORREF color, float factor) {
     int r = std::min(255, (int)(GetRValue(color) * factor));
     int g = std::min(255, (int)(GetGValue(color) * factor));
@@ -139,10 +148,17 @@ void drawToggleTrack(HDC hdc, const RECT& rc, bool on, bool hot) {
     DeleteObject(knob);
 }
 
-void drawChip(HDC hdc, const RECT& rc, const wchar_t* text, bool selected, bool hot) {
+void drawChip(HDC hdc, const RECT& rc, const wchar_t* text, bool selected, bool hot,
+              bool disabled) {
     COLORREF fill = selected ? g_theme.accent : (hot ? g_theme.buttonHover : g_theme.buttonBg);
     COLORREF border = selected ? g_theme.accent : g_theme.buttonBorder;
     COLORREF textColor = selected ? g_theme.accentText : g_theme.text;
+    if (disabled) {
+        // Greyed out: the selected one keeps a muted accent so the state stays readable.
+        fill = selected ? blendColors(g_theme.accent, g_theme.bg, 0.35f) : g_theme.bg;
+        border = selected ? blendColors(g_theme.accent, g_theme.bg, 0.35f) : g_theme.buttonBorder;
+        textColor = g_theme.textDim;
+    }
 
     drawRoundRect(hdc, rc, std::max(3, g_theme.radius - 2), fill, border, 1);
 
@@ -208,7 +224,7 @@ void drawButtonSpec(const DRAWITEMSTRUCT* dis, const BtnSpec& spec, bool checked
             break;
         }
         case BtnKind::Chip: {
-            drawChip(hdc, rc, spec.text, checkedState, hot);
+            drawChip(hdc, rc, spec.text, checkedState, hot, disabled);
             break;
         }
     }

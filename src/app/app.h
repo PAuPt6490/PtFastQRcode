@@ -54,8 +54,7 @@ struct Settings {
     bool autostart;
     int eccLevel;   // index into qr::Ecc: 0..3
     int qrSize;     // device independent pixels of the exported/saved image
-    int uiStyle;    // 0 = Win32 classic, 1 = WinUI 3
-    int themeMode;  // 0 = follow system, 1 = light, 2 = dark
+    int theme;      // 1 = Win32 classic, 2 = WinUI 3 light, 3 = WinUI 3 dark
     int popupWidth;   // remembered popup size in design pixels
     int popupHeight;
     std::wstring saveDir;
@@ -65,6 +64,9 @@ extern Settings g_settings;
 
 bool systemPrefersDark();
 bool themeIsDark();
+int  defaultTheme();
+inline int themeStyle(int theme) { return theme == 1 ? 0 : 1; }
+inline bool themeIsDarkTheme(int theme) { return theme == 3; }
 
 void loadSettings();
 void saveSettings();
@@ -213,7 +215,8 @@ void drawButtonSpec(const DRAWITEMSTRUCT* dis, const BtnSpec& spec, bool checked
 void drawGlyphClose(HDC hdc, const RECT& rc, COLORREF color);
 void drawGlyphSliders(HDC hdc, const RECT& rc, COLORREF color);
 void drawToggleTrack(HDC hdc, const RECT& rc, bool on, bool hot);
-void drawChip(HDC hdc, const RECT& rc, const wchar_t* text, bool selected, bool hot);
+void drawChip(HDC hdc, const RECT& rc, const wchar_t* text, bool selected, bool hot,
+              bool disabled);
 
 // Rounded window shape clipped by us (no DWM dependency) + the OS icon font.
 void applyWindowShape(HWND hwnd);

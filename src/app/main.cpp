@@ -228,15 +228,6 @@ LRESULT CALLBACK ControllerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
         }
 
         case WM_SETTINGCHANGE:
-            if (g_settings.themeMode == 0 && lParam &&
-                wcscmp((const wchar_t*)lParam, L"ImmersiveColorSet") == 0) {
-                HWND popup = g_popup;
-                g_popup = nullptr;
-                if (popup) DestroyWindow(popup);
-                if (g_settingsWnd) DestroyWindow(g_settingsWnd);
-                applyTheme(g_settings.uiStyle);
-                rebuildTrayIcon();
-            }
             return 0;
 
         case WM_TIMER:
@@ -521,7 +512,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     // COM stays uninitialised until something needs it (see ensureCom).
 
     loadSettings();
-    applyTheme(g_settings.uiStyle);
+    applyTheme(g_settings.theme);
 
     std::wstring arguments = commandLine ? commandLine : L"";
     if (tu::contains(arguments.c_str(), L"--pick-save")) return runSaveDialogHelper(arguments);
