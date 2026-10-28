@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "text_util.h"
+
 #include <shellapi.h>
 #include <shlwapi.h>
 
@@ -88,7 +90,7 @@ void updateTrayIcon() {
     data.hWnd = g_controller;
     data.uID = kTrayId;
     data.uFlags = NIF_TIP | NIF_SHOWTIP;
-    wcsncpy_s(data.szTip, tooltip.c_str(), _TRUNCATE);
+    tu::copy(data.szTip, ARRAYSIZE(data.szTip), tooltip.c_str());
     Shell_NotifyIconW(NIM_MODIFY, &data);
 }
 
@@ -107,7 +109,7 @@ void addTrayIcon() {
     data.hIcon = g_trayIcon;
     std::wstring tooltip = std::wstring(kAppName) + L"  ·  " +
                            formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk);
-    wcsncpy_s(data.szTip, tooltip.c_str(), _TRUNCATE);
+    tu::copy(data.szTip, ARRAYSIZE(data.szTip), tooltip.c_str());
     Shell_NotifyIconW(NIM_ADD, &data);
     data.uVersion = NOTIFYICON_VERSION_4;
     Shell_NotifyIconW(NIM_SETVERSION, &data);
@@ -374,8 +376,9 @@ void restartApplication() {
     PROCESS_INFORMATION process = {};
     if (!CreateProcessW(nullptr, &commandLine[0], nullptr, nullptr, FALSE, 0, nullptr, nullptr,
                         &startup, &process)) {
-        std::wstring message = L"重启失败,请手动退出后重新打开。错误码:" +
-                               std::to_wstring(GetLastError());
+        wchar_t code[32];
+        tu::formatUnsigned(code, ARRAYSIZE(code), (unsigned long)GetLastError());
+        std::wstring message = L"重启失败,请手动退出后重新打开。错误码:" + std::wstring(code);
         MessageBoxW(nullptr, message.c_str(), kAppName, MB_ICONERROR | MB_OK);
         return;
     }
@@ -403,17 +406,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
 
     OleInitialize(nullptr);
 
-    Gdiplus::GdiplusStartupInput gdiplusInput;
-    ULONG_PTR gdiplusToken = 0;
-    Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusInput, nullptr);
-
     loadSettings();
     applyTheme(g_settings.uiStyle);
 
     std::wstring arguments = commandLine ? commandLine : L"";
-    bool startHidden = arguments.find(L"--startup") != std::wstring::npos;
-    bool requestShow = arguments.find(L"--show") != std::wstring::npos;
-    bool restartMode = arguments.find(L"--restart") != std::wstring::npos;
+    bool startHidden = tu::contains(arguments.c_str(), L"--startup");
+    bool requestShow = tu::contains(arguments.c_str(), L"--show");
+    bool restartMode = tu::contains(arguments.c_str(), L"--restart");
 
     // A restarted instance waits briefly for its predecessor to release the mutex.
     HANDLE mutex = nullptr;
@@ -436,7 +435,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
                         MB_ICONWARNING | MB_OK);
         }
         if (mutex) CloseHandle(mutex);
-        Gdiplus::GdiplusShutdown(gdiplusToken);
         OleUninitialize();
         return 0;
     }
@@ -488,7 +486,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     if (g_popupAccel) DestroyAcceleratorTable(g_popupAccel);
     if (g_settingsAccel) DestroyAcceleratorTable(g_settingsAccel);
     destroyFonts();
-    Gdiplus::GdiplusShutdown(gdiplusToken);
     OleUninitialize();
     if (mutex) CloseHandle(mutex);
     return (int)msg.wParam;

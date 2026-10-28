@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "text_util.h"
+
 #include <commdlg.h>
 #include <windowsx.h>
 
@@ -109,13 +111,27 @@ std::wstring defaultStatusText() {
                                   : L"点击窗口外不关闭  ·  Esc 退出";
 }
 
+// comdlg32 is loaded on first save instead of at startup: one DLL less in the tray-only state.
+typedef BOOL(WINAPI* GetSaveFileNameWFn)(LPOPENFILENAMEW);
+
+BOOL pickSavePath(OPENFILENAMEW* dialog) {
+    static GetSaveFileNameWFn resolve = nullptr;
+    static bool resolved = false;
+    if (!resolved) {
+        resolved = true;
+        HMODULE module = LoadLibraryW(L"comdlg32.dll");
+        if (module) resolve = (GetSaveFileNameWFn)GetProcAddress(module, "GetSaveFileNameW");
+    }
+    return resolve && resolve(dialog);
+}
+
 std::wstring baseName(const std::wstring& path) {
-    size_t slash = path.find_last_of(L"\\/");
+    size_t slash = tu::lastPathSeparator(path);
     return slash == std::wstring::npos ? path : path.substr(slash + 1);
 }
 
 std::wstring directoryOf(const std::wstring& path) {
-    size_t slash = path.find_last_of(L"\\/");
+    size_t slash = tu::lastPathSeparator(path);
     return slash == std::wstring::npos ? std::wstring() : path.substr(0, slash);
 }
 
@@ -198,7 +214,9 @@ void refreshQr(HWND hwnd) {
     InvalidateRect(hwnd, &st->layout.card, FALSE);
 }
 
-void paintPopup(HWND hwnd, HDC hdc) {
+// Paints only the parts that intersect the invalidated rectangle: when a status line
+// changes there is no reason to redraw the QR matrix on top of it.
+void paintPopup(HWND hwnd, HDC hdc, const RECT& dirty) {
     PopupState* st = getState(hwnd);
     if (!st) return;
 
@@ -207,50 +225,51 @@ void paintPopup(HWND hwnd, HDC hdc) {
 
     paintWindowBackdrop(hdc, client, true);
 
-    if (st->icon) {
+    const bool headerDirty = rectsOverlap(dirty, st->layout.separator);
+    const bool fieldDirty = rectsOverlap(dirty, st->layout.field);
+    const bool cardDirty = rectsOverlap(dirty, st->layout.card);
+    const bool statusDirty = rectsOverlap(dirty, st->layout.status);
+
+    if (headerDirty && st->icon) {
         DrawIconEx(hdc, st->layout.headerIcon.left, st->layout.headerIcon.top, st->icon,
                    st->layout.headerIcon.right - st->layout.headerIcon.left,
                    st->layout.headerIcon.bottom - st->layout.headerIcon.top, 0, nullptr,
                    DI_NORMAL);
     }
 
-    RECT titleRect = st->layout.title;
-    drawTextGdi(hdc, g_fonts.title, g_theme.text, L"PtFastQRcode", titleRect,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    if (headerDirty) {
+        RECT titleRect = st->layout.title;
+        drawTextGdi(hdc, g_fonts.title, g_theme.text, L"PtFastQRcode", titleRect,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    std::wstring subtitle = formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk) + L"  唤起";
-    RECT subtitleRect = st->layout.subtitle;
-    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, subtitle.c_str(), subtitleRect,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        std::wstring subtitle =
+            formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk) + L"  唤起";
+        RECT subtitleRect = st->layout.subtitle;
+        drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, subtitle.c_str(), subtitleRect,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    {
-        Gdiplus::Graphics g(hdc);
-        Gdiplus::Pen pen(toGdiColor(g_theme.cardBorder), 1.0f);
-        g.DrawLine(&pen, (float)st->layout.separator.left, (float)st->layout.separator.top + 0.5f,
-                   (float)st->layout.separator.right, (float)st->layout.separator.top + 0.5f);
+        HPEN pen = CreatePen(PS_SOLID, 1, g_theme.cardBorder);
+        HGDIOBJ previous = SelectObject(hdc, pen);
+        MoveToEx(hdc, st->layout.separator.left, st->layout.separator.top, nullptr);
+        LineTo(hdc, st->layout.separator.right + 1, st->layout.separator.top);
+        SelectObject(hdc, previous);
+        DeleteObject(pen);
     }
 
-    RECT labelRect = st->layout.contentLabel;
-    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, L"内容", labelRect,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
-    paintFieldFrame(hwnd, hdc, st->layout.field, g_theme.radius);
+    if (fieldDirty) {
+        RECT labelRect = st->layout.contentLabel;
+        drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, L"内容", labelRect,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        paintFieldFrame(hwnd, hdc, st->layout.field, g_theme.radius);
+    }
 
     // ---- QR card ----
-    {
-        Gdiplus::Graphics g(hdc);
-        g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        drawRoundedRect(g,
-                        Gdiplus::RectF((float)st->layout.card.left + 0.5f,
-                                       (float)st->layout.card.top + 0.5f,
-                                       (float)(st->layout.card.right - st->layout.card.left) - 1.0f,
-                                       (float)(st->layout.card.bottom - st->layout.card.top) - 1.0f),
-                        (float)(g_theme.radius + 2), toGdiColor(g_theme.card),
-                        toGdiColor(g_theme.cardBorder), 1.0f);
+    if (cardDirty) {
+        drawRoundRect(hdc, st->layout.card, g_theme.radius + 2, g_theme.card, g_theme.cardBorder, 1);
 
         RECT card = st->layout.card;
         if (st->hasSymbol) {
-            drawQrSymbol(hdc, card, st->symbol);
+            drawQrSymbol(hdc, card, st->symbol, S(28));
         } else {
             std::wstring placeholder = st->error.empty() ? L"粘贴或输入内容后自动生成" : st->error;
             RECT textRect = card;
@@ -262,17 +281,22 @@ void paintPopup(HWND hwnd, HDC hdc) {
         }
     }
 
-    std::wstring status = st->message.empty() ? defaultStatusText() : st->message;
-    COLORREF statusColor = st->messageIsError ? g_theme.danger
-                                              : (st->message.empty() ? g_theme.textDim : g_theme.text);
-    RECT statusRect = st->layout.status;
-    drawTextGdi(hdc, g_fonts.hint, statusColor, status.c_str(), statusRect,
-                DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (statusDirty) {
+        std::wstring status = st->message.empty() ? defaultStatusText() : st->message;
+        COLORREF statusColor = st->messageIsError
+                                   ? g_theme.danger
+                                   : (st->message.empty() ? g_theme.textDim : g_theme.text);
+        RECT statusRect = st->layout.status;
+        drawTextGdi(hdc, g_fonts.hint, statusColor, status.c_str(), statusRect,
+                    DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
 
-    RECT hintRect = st->layout.hint;
-    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim,
-                L"Esc 关闭    Ctrl+S 保存    Ctrl+D 复制图片", hintRect,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    if (rectsOverlap(dirty, st->layout.hint)) {
+        RECT hintRect = st->layout.hint;
+        drawTextGdi(hdc, g_fonts.hint, g_theme.textDim,
+                    L"Esc 关闭    Ctrl+S 保存    Ctrl+D 复制图片", hintRect,
+                    DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
 }
 
 void savePng(HWND hwnd) {
@@ -289,7 +313,7 @@ void savePng(HWND hwnd) {
     std::wstring suggested = directory + L"\\" + defaultFileNameFor(text);
 
     std::vector<wchar_t> buffer(MAX_PATH * 4, 0);
-    wcsncpy_s(buffer.data(), buffer.size(), suggested.c_str(), _TRUNCATE);
+    tu::copy(buffer.data(), buffer.size(), suggested.c_str());
 
     OPENFILENAMEW dialog = {};
     dialog.lStructSize = sizeof(dialog);
@@ -302,18 +326,12 @@ void savePng(HWND hwnd) {
     dialog.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 
     st->suppressDeactivate = true;
-    BOOL accepted = GetSaveFileNameW(&dialog);
+    const BOOL accepted = pickSavePath(&dialog);
     st->suppressDeactivate = false;
     if (!accepted) return;
 
     std::wstring path = buffer.data();
-    Gdiplus::Bitmap* bitmap = renderQrBitmap(st->symbol, S(g_settings.qrSize));
-    if (!bitmap) {
-        setStatus(hwnd, st, L"生成图片失败", true);
-        return;
-    }
-    bool saved = saveBitmapAsPng(bitmap, path);
-    delete bitmap;
+    const bool saved = saveQrPng(st->symbol, S(g_settings.qrSize), path);
 
     if (saved) {
         g_settings.saveDir = directoryOf(path);
@@ -332,13 +350,7 @@ void copyImage(HWND hwnd) {
         setStatus(hwnd, st, L"请先输入要生成二维码的内容", true);
         return;
     }
-    Gdiplus::Bitmap* bitmap = renderQrBitmap(st->symbol, S(g_settings.qrSize));
-    if (!bitmap) {
-        setStatus(hwnd, st, L"生成图片失败", true);
-        return;
-    }
-    bool copied = copyBitmapToClipboard(hwnd, bitmap);
-    delete bitmap;
+    const bool copied = copyQrToClipboard(hwnd, st->symbol, S(g_settings.qrSize));
     setStatus(hwnd, st, copied ? L"二维码图片已复制到剪贴板" : L"复制失败,剪贴板被占用", !copied);
 }
 
@@ -492,10 +504,10 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
                 RECT client;
                 GetClientRect(hwnd, &client);
                 PaintBuffer buffer = beginPaintBuffer(hwnd, client);
-                paintPopup(hwnd, buffer.dc);
+                paintPopup(hwnd, buffer.dc, ps.rcPaint);
                 endPaintBuffer(hwnd, buffer);
             } else {
-                paintPopup(hwnd, dc);
+                paintPopup(hwnd, dc, ps.rcPaint);
             }
             EndPaint(hwnd, &ps);
             return 0;
@@ -615,6 +627,7 @@ HWND createPopupWindow() {
         registered = true;
     }
 
+    ensureFonts();
     HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_TOPMOST, kWndClassPopup, kAppName,
                                 WS_POPUP | WS_CLIPCHILDREN, 0, 0, S(g_settings.popupWidth), S(g_settings.popupHeight),
                                 nullptr, nullptr, g_hinst,
@@ -658,7 +671,8 @@ void showPopup() {
         std::wstring text = getClipboardText();
         if (!text.empty()) {
             std::wstring current = getEditText(st->edit);
-            if (text != current) SetWindowTextW(st->edit, text.c_str());
+            if (tu::compare(text.c_str(), current.c_str()) != 0)
+                SetWindowTextW(st->edit, text.c_str());
         }
     }
     SendMessageW(st->edit, EM_SETSEL, 0, -1);

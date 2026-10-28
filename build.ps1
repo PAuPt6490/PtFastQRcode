@@ -31,7 +31,10 @@ $sources = @(
     'src\app\qrimage.cpp',
     'src\app\popup.cpp',
     'src\app\settings_win.cpp',
-    'src\app\main.cpp'
+    'src\app\main.cpp',
+    'src\app\text_util.cpp',
+    'src\app\crt_stub.cpp',
+    'src\app\crt_mem.c'
 )
 
 # --- resources (icon, manifest, version info) ---
@@ -40,26 +43,38 @@ $resPath = Join-Path $objDir 'app.res'
 if ($LASTEXITCODE -ne 0) { throw "rc.exe failed with $LASTEXITCODE" }
 
 # --- compile + link (-GL/-LTCG keeps the static CRT compact) ---
-$compileArgs = @(
-    '/nologo', '/c', '/O2', '/GL', '/MT', '/EHsc', '/utf-8', '/W3',
+# No C runtime: crt_stub.cpp provides the entry point, allocator and memory primitives.
+# Exceptions and RTTI are off so the C++ EH runtime is never referenced.
+$commonDefines = @(
+    '/nologo', '/c', '/O2', '/MT', '/NODEFAULTLIB', '/GS-', '/EHs-c-', '/GR-',
+    '/D_HAS_EXCEPTIONS=0', '/utf-8', '/W3',
     '/DUNICODE', '/D_UNICODE', '/D_WIN32_WINNT=0x0A00', '/DWINVER=0x0A00',
     "/I$(Join-Path $root 'src')", "/I$(Join-Path $root 'src\res')",
     "/Fo$objDir\"
-) + $IncFlags + $sources
+) + $IncFlags
 
-& $ClExe @compileArgs
+# Everything but the CRT shim goes through LTCG.
+$ltcgSources = $sources | Where-Object { $_ -notlike '*crt_mem.c' }
+& $ClExe @commonDefines @('/GL') $ltcgSources
 if ($LASTEXITCODE -ne 0) { throw "cl.exe failed with $LASTEXITCODE" }
 
+# crt_mem.c defines the compiler's library helpers, which /GL cannot carry.
+& $ClExe @commonDefines (Join-Path $root 'src\app\crt_mem.c')
+if ($LASTEXITCODE -ne 0) { throw "cl.exe failed on crt_mem.c with $LASTEXITCODE" }
+
 $objects = $sources | ForEach-Object {
-    Join-Path $objDir ((Split-Path -Leaf $_).Replace('.cpp', '.obj'))
+    $leaf = (Split-Path -Leaf $_).Replace('.cpp', '.obj').Replace('.c', '.obj')
+    Join-Path $objDir $leaf
 }
 
 $linkArgs = @(
     '/nologo', '/SUBSYSTEM:WINDOWS', '/LTCG', '/OPT:REF', '/OPT:ICF', '/MANIFEST:NO',
+    '/NODEFAULTLIB', '/ENTRY:entryPoint',
     "/OUT:$exePath"
 ) + $LibFlags + $objects + @($resPath) + @(
-    'user32.lib', 'gdi32.lib', 'gdiplus.lib', 'shell32.lib', 'shlwapi.lib',
-    'ole32.lib', 'comctl32.lib', 'comdlg32.lib', 'uuid.lib', 'advapi32.lib'
+    'kernel32.lib', 'user32.lib', 'gdi32.lib', 'shell32.lib', 'shlwapi.lib',
+    'ole32.lib', 'comctl32.lib', 'uuid.lib', 'advapi32.lib', 'uxtheme.lib',
+    'windowscodecs.lib'
 )
 
 & $LinkExe @linkArgs

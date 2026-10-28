@@ -4,8 +4,6 @@
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #include <windows.h>
-#include <objidl.h>   // GDI+ headers need IStream from here when WIN32_LEAN_AND_MEAN is set
-#include <gdiplus.h>
 
 #include <string>
 #include <vector>
@@ -110,22 +108,26 @@ struct Fonts {
     HFONT body;     // normal UI text
     HFONT hint;     // hints, status ('small' is a macro in rpcndr.h)
     HFONT bold;     // buttons, labels with emphasis
-    HFONT mono;     // (unused placeholder, kept for future)
 };
 
 extern Fonts g_fonts;
-void createFonts();
+// Fonts are created on first window creation, not at startup.
+void ensureFonts();
 void destroyFonts();
 
 // ------------------------------------------------------------------ drawing
 
-void drawRoundedRect(Gdiplus::Graphics& g, const Gdiplus::RectF& rect, float radius,
-                     const Gdiplus::Color& fill, const Gdiplus::Color& stroke, float strokeWidth);
+// Two rectangles in the same coordinate space.
+inline bool rectsOverlap(const RECT& a, const RECT& b) {
+    return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+// Rounded rectangle drawn with GDI. CLR_NONE as fill = hollow, as stroke = no border.
+void drawRoundRect(HDC hdc, const RECT& rc, int radius, COLORREF fill, COLORREF stroke,
+                   int strokeWidth);
 void drawTextGdi(HDC hdc, HFONT font, COLORREF color, const wchar_t* text, RECT rect,
                  UINT format);
 int  textWidth(HDC hdc, HFONT font, const wchar_t* text);
-Gdiplus::Color toGdiColor(COLORREF color);
-Gdiplus::Color toGdiColor(COLORREF color, BYTE alpha);
 void paintWindowBackdrop(HDC hdc, const RECT& client, bool rounded);
 
 // Creates a double buffered memory DC sized to 'client' and copies back on end.
@@ -144,14 +146,14 @@ bool paintIsBuffered();
 
 // ------------------------------------------------------------------ qr image
 
-// Renders the symbol into a white PNG-ready bitmap with a 4 module quiet zone.
-Gdiplus::Bitmap* renderQrBitmap(const qr::Symbol& symbol, int pixelSize);
+// Paints the symbol into 'area' (a 4 module quiet zone is added inside the modules).
+void drawQrSymbol(HDC hdc, const RECT& area, const qr::Symbol& symbol, int padding);
 
-// Paints the symbol directly into 'area' (no bitmap kept in memory).
-void drawQrSymbol(HDC hdc, const RECT& area, const qr::Symbol& symbol);
+// Renders the symbol into a 32bpp DIB and writes it as PNG through WIC.
+bool saveQrPng(const qr::Symbol& symbol, int pixelSize, const std::wstring& path);
 
-bool saveBitmapAsPng(Gdiplus::Bitmap* bitmap, const std::wstring& path);
-bool copyBitmapToClipboard(HWND owner, Gdiplus::Bitmap* bitmap);
+// Renders the symbol into a 32bpp DIB and puts it on the clipboard (CF_DIB + CF_BITMAP).
+bool copyQrToClipboard(HWND owner, const qr::Symbol& symbol, int pixelSize);
 
 std::wstring defaultFileNameFor(const std::wstring& content);
 

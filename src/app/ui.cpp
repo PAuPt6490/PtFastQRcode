@@ -75,16 +75,17 @@ void drawGlyphClose(HDC hdc, const RECT& rc, COLORREF color) {
         drawSystemGlyph(hdc, rc, 0xE8BB, color);  // Segoe Fluent/MDL2 "ChromeClose"
         return;
     }
-    Gdiplus::Graphics g(hdc);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    float cx = (rc.left + rc.right) / 2.0f;
-    float cy = (rc.top + rc.bottom) / 2.0f;
-    float d = (float)S(5);
-    Gdiplus::Pen pen(toGdiColor(color), (float)S(1.8));
-    pen.SetStartCap(Gdiplus::LineCapRound);
-    pen.SetEndCap(Gdiplus::LineCapRound);
-    g.DrawLine(&pen, cx - d, cy - d, cx + d, cy + d);
-    g.DrawLine(&pen, cx + d, cy - d, cx - d, cy + d);
+    const int cx = (rc.left + rc.right) / 2;
+    const int cy = (rc.top + rc.bottom) / 2;
+    const int d = S(5);
+    HPEN pen = CreatePen(PS_SOLID, S(2), color);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    MoveToEx(hdc, cx - d, cy - d, nullptr);
+    LineTo(hdc, cx + d + 1, cy + d + 1);
+    MoveToEx(hdc, cx + d, cy - d, nullptr);
+    LineTo(hdc, cx - d - 1, cy + d + 1);
+    SelectObject(hdc, oldPen);
+    DeleteObject(pen);
 }
 
 void drawGlyphSliders(HDC hdc, const RECT& rc, COLORREF color) {
@@ -92,46 +93,50 @@ void drawGlyphSliders(HDC hdc, const RECT& rc, COLORREF color) {
         drawSystemGlyph(hdc, rc, 0xE713, color);  // Segoe "Setting"
         return;
     }
-    Gdiplus::Graphics g(hdc);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    float cx = (rc.left + rc.right) / 2.0f;
-    float cy = (rc.top + rc.bottom) / 2.0f;
-    float half = (float)S(7);
-    float gap = (float)S(5);
-    Gdiplus::Pen pen(toGdiColor(color), (float)S(1.6));
-    pen.SetStartCap(Gdiplus::LineCapRound);
-    pen.SetEndCap(Gdiplus::LineCapRound);
-    Gdiplus::SolidBrush knob(toGdiColor(color));
+    const int cx = (rc.left + rc.right) / 2;
+    const int cy = (rc.top + rc.bottom) / 2;
+    const int half = S(7);
+    const int gap = S(5);
+    HPEN pen = CreatePen(PS_SOLID, S(2), color);
+    HBRUSH brush = CreateSolidBrush(color);
+    HGDIOBJ oldPen = SelectObject(hdc, pen);
+    HGDIOBJ oldBrush = SelectObject(hdc, brush);
 
-    const float knobs[3] = {-0.45f, 0.35f, -0.1f};
+    const int knobs[3] = {-4, 3, -1};
     for (int i = 0; i < 3; ++i) {
-        float y = cy + (i - 1) * gap;
-        g.DrawLine(&pen, cx - half, y, cx + half, y);
-        float kx = cx + knobs[i] * half;
-        g.FillEllipse(&knob, kx - (float)S(1.8), y - (float)S(1.8), (float)S(3.6),
-                      (float)S(3.6));
+        const int y = cy + (i - 1) * gap;
+        MoveToEx(hdc, cx - half, y, nullptr);
+        LineTo(hdc, cx + half + 1, y);
+        const int kx = cx + knobs[i] * half / 10;
+        Ellipse(hdc, kx - S(2), y - S(2), kx + S(2), y + S(2));
     }
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
 }
 
 void drawToggleTrack(HDC hdc, const RECT& rc, bool on, bool hot) {
-    Gdiplus::Graphics g(hdc);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-
-    float width = (float)S(40);
-    float height = (float)S(22);
-    float left = rc.left + ((rc.right - rc.left) - width) * 0.5f;
-    float top = rc.top + ((rc.bottom - rc.top) - height) * 0.5f;
+    const int width = S(40);
+    const int height = S(22);
+    const int left = rc.left + (rc.right - rc.left - width) / 2;
+    const int top = rc.top + (rc.bottom - rc.top - height) / 2;
 
     COLORREF track = on ? g_theme.accent : (g_theme.dark ? RGB(76, 76, 76) : RGB(196, 196, 196));
     if (!on && hot) track = shade(track, 1.08f);
 
-    drawRoundedRect(g, Gdiplus::RectF(left, top, width, height), height * 0.5f,
-                    toGdiColor(track), Gdiplus::Color(0, 0, 0, 0), 0.0f);
+    drawRoundRect(hdc, RECT{left, top, left + width, top + height}, height / 2, track, CLR_NONE, 0);
 
-    float knobSize = height - (float)S(6);
-    float knobX = on ? left + width - knobSize - (float)S(3) : left + (float)S(3);
-    Gdiplus::SolidBrush knob(on ? toGdiColor(g_theme.accentText) : Gdiplus::Color(255, 255, 255, 255));
-    g.FillEllipse(&knob, knobX, top + (float)S(3), knobSize, knobSize);
+    const int knobSize = height - S(6);
+    const int knobX = on ? left + width - knobSize - S(3) : left + S(3);
+    const COLORREF knobColor = on ? g_theme.accentText : RGB(255, 255, 255);
+    HBRUSH knob = CreateSolidBrush(knobColor);
+    HGDIOBJ oldBrush = SelectObject(hdc, knob);
+    HGDIOBJ oldPen = SelectObject(hdc, GetStockObject(NULL_PEN));
+    Ellipse(hdc, knobX, top + S(3), knobX + knobSize + 1, top + S(3) + knobSize + 1);
+    SelectObject(hdc, oldPen);
+    SelectObject(hdc, oldBrush);
+    DeleteObject(knob);
 }
 
 void drawChip(HDC hdc, const RECT& rc, const wchar_t* text, bool selected, bool hot) {
@@ -139,14 +144,7 @@ void drawChip(HDC hdc, const RECT& rc, const wchar_t* text, bool selected, bool 
     COLORREF border = selected ? g_theme.accent : g_theme.buttonBorder;
     COLORREF textColor = selected ? g_theme.accentText : g_theme.text;
 
-    Gdiplus::Graphics g(hdc);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-    RECT r = rc;
-    drawRoundedRect(g, Gdiplus::RectF((float)r.left + 0.5f, (float)r.top + 0.5f,
-                                      (float)(r.right - r.left) - 1.0f,
-                                      (float)(r.bottom - r.top) - 1.0f),
-                    (float)std::max(3, g_theme.radius - 2), toGdiColor(fill), toGdiColor(border),
-                    1.0f);
+    drawRoundRect(hdc, rc, std::max(3, g_theme.radius - 2), fill, border, 1);
 
     RECT textRect = rc;
     drawTextGdi(hdc, g_fonts.bold, textColor, text, textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -168,20 +166,13 @@ void drawButtonSpec(const DRAWITEMSTRUCT* dis, const BtnSpec& spec, bool checked
     // Win32 classic delegates to the OS visual-styles engine.
     if (g_theme.flatClick && !g_theme.dark && drawNativeButton(dis, spec, checkedState)) return;
 
-    Gdiplus::Graphics g(hdc);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-
     switch (spec.kind) {
         case BtnKind::Primary: {
             COLORREF fill = g_theme.accent;
             if (disabled) fill = g_theme.buttonBg;
             else if (pressed) fill = shade(g_theme.accent, 0.88f);
             else if (hot) fill = g_theme.accentHover;
-            drawRoundedRect(g, Gdiplus::RectF((float)rc.left, (float)rc.top,
-                                              (float)(rc.right - rc.left),
-                                              (float)(rc.bottom - rc.top)),
-                            (float)g_theme.radius, toGdiColor(fill), Gdiplus::Color(0, 0, 0, 0),
-                            0.0f);
+            drawRoundRect(hdc, rc, g_theme.radius, fill, CLR_NONE, 0);
             COLORREF textColor = disabled ? g_theme.textDim : g_theme.accentText;
             RECT textRect = rc;
             drawTextGdi(hdc, g_fonts.bold, textColor, spec.text, textRect,
@@ -191,11 +182,7 @@ void drawButtonSpec(const DRAWITEMSTRUCT* dis, const BtnSpec& spec, bool checked
         case BtnKind::Secondary: {
             COLORREF fill = pressed ? shade(g_theme.buttonBg, 0.92f)
                                     : (hot ? g_theme.buttonHover : g_theme.buttonBg);
-            drawRoundedRect(g, Gdiplus::RectF((float)rc.left + 0.5f, (float)rc.top + 0.5f,
-                                              (float)(rc.right - rc.left) - 1.0f,
-                                              (float)(rc.bottom - rc.top) - 1.0f),
-                            (float)g_theme.radius, toGdiColor(fill), toGdiColor(g_theme.buttonBorder),
-                            1.0f);
+            drawRoundRect(hdc, rc, g_theme.radius, fill, g_theme.buttonBorder, 1);
             RECT textRect = rc;
             drawTextGdi(hdc, g_fonts.bold, disabled ? g_theme.textDim : g_theme.text, spec.text,
                         textRect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -206,11 +193,7 @@ void drawButtonSpec(const DRAWITEMSTRUCT* dis, const BtnSpec& spec, bool checked
             bool danger = spec.kind == BtnKind::IconClose;
             if (hot) {
                 COLORREF fill = danger ? g_theme.danger : g_theme.hover;
-                drawRoundedRect(g, Gdiplus::RectF((float)rc.left, (float)rc.top,
-                                                  (float)(rc.right - rc.left),
-                                                  (float)(rc.bottom - rc.top)),
-                                (float)std::max(4, g_theme.radius - 2), toGdiColor(fill),
-                                Gdiplus::Color(0, 0, 0, 0), 0.0f);
+                drawRoundRect(hdc, rc, std::max(4, g_theme.radius - 2), fill, CLR_NONE, 0);
             }
             COLORREF glyphColor = (hot && danger) ? RGB(255, 255, 255) : g_theme.textDim;
             if (hot && !danger) glyphColor = g_theme.text;
@@ -232,9 +215,7 @@ void drawButtonSpec(const DRAWITEMSTRUCT* dis, const BtnSpec& spec, bool checked
 
     // Keyboard focus ring for enabled buttons.
     if ((dis->itemState & ODS_FOCUS) && !(dis->itemState & ODS_NOFOCUSRECT) && !disabled) {
-        Gdiplus::Pen pen(toGdiColor(g_theme.accent), 1.0f);
-        pen.SetDashStyle(Gdiplus::DashStyleDot);
-        g.DrawRectangle(&pen, rc.left + 2, rc.top + 2, rc.right - rc.left - 5,
-                        rc.bottom - rc.top - 5);
+        RECT ring = {rc.left + 2, rc.top + 2, rc.right - 2, rc.bottom - 2};
+        DrawFocusRect(hdc, &ring);
     }
 }

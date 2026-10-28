@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "text_util.h"
+
 #include <commctrl.h>
 #include <shlobj.h>
 #include <shobjidl.h>
@@ -182,13 +184,9 @@ void paintHotkeyControl(HWND hwnd) {
 
     PaintBuffer buffer = beginPaintBuffer(hwnd, client);
 
-    Gdiplus::Graphics g(buffer.dc);
-    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
     COLORREF border = g_captureFocused ? g_theme.accent : g_theme.fieldBorder;
-    drawRoundedRect(g, Gdiplus::RectF(0.5f, 0.5f, (float)client.right - 1.0f,
-                                      (float)client.bottom - 1.0f),
-                    (float)g_theme.radius, toGdiColor(g_theme.fieldBg), toGdiColor(border),
-                    g_captureFocused ? 1.6f : 1.0f);
+    drawRoundRect(buffer.dc, client, g_theme.radius, g_theme.fieldBg, border,
+                  g_captureFocused ? 2 : 1);
 
     std::wstring text = g_captureVk ? formatHotkey(g_captureMods, g_captureVk)
                                     : L"点击后按下组合键";
@@ -319,7 +317,7 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
 
     wchar_t sizeText[32] = {0};
     GetWindowTextW(st->sizeEdit, sizeText, ARRAYSIZE(sizeText));
-    int size = _wtoi(sizeText);
+    int size = tu::toInt(sizeText);
     size = std::max(160, std::min(1200, size));
     wchar_t directory[MAX_PATH * 2] = {0};
     GetWindowTextW(st->dirEdit, directory, ARRAYSIZE(directory));
@@ -348,13 +346,14 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
     if (restartAfterSave) restartApplication();
 }
 
-void paintSettings(HWND hwnd, HDC hdc) {
+void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
     SettingsState* st = getState(hwnd);
     if (!st) return;
 
     RECT client;
     GetClientRect(hwnd, &client);
     paintWindowBackdrop(hdc, client, true);
+    if (!rectsOverlap(dirty, client)) return;
 
     const int clientWidth = client.right;
     const int clientHeight = client.bottom;
@@ -364,14 +363,20 @@ void paintSettings(HWND hwnd, HDC hdc) {
                 DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     {
-        Gdiplus::Graphics g(hdc);
-        Gdiplus::Pen pen(toGdiColor(g_theme.cardBorder), 1.0f);
+        // Header rule, one hairline per section, and the footer rule.
+        HPEN pen = CreatePen(PS_SOLID, 1, g_theme.cardBorder);
+        HGDIOBJ previous = SelectObject(hdc, pen);
         auto line = [&](int y) {
-            g.DrawLine(&pen, (float)S(16), (float)y + 0.5f, (float)(clientWidth - S(16)),
-                       (float)y + 0.5f);
+            MoveToEx(hdc, S(16), y, nullptr);
+            LineTo(hdc, clientWidth - S(16) + 1, y);
         };
         line(S(48));
+        line(S(128));
+        line(S(284));
+        line(S(476));
         line(clientHeight - S(64));
+        SelectObject(hdc, previous);
+        DeleteObject(pen);
     }
 
     auto label = [&](const wchar_t* text, int x, int y, int w, int h, HFONT font, COLORREF color,
@@ -384,7 +389,7 @@ void paintSettings(HWND hwnd, HDC hdc) {
     label(L"点击后按下新的组合键,例如 Ctrl + Alt + Q", 16, 110, 520, 18, g_fonts.hint,
           g_theme.textDim, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    label(L"行为", 16, 132, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"行为", 16, 134, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     const wchar_t* toggleLabels[4] = {L"点击窗口外自动关闭", L"打开时自动粘贴剪贴板",
                                       L"保存后关闭窗口", L"开机自启动"};
     for (int i = 0; i < 4; ++i) {
@@ -393,7 +398,7 @@ void paintSettings(HWND hwnd, HDC hdc) {
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 
-    label(L"二维码", 16, 292, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"二维码", 16, 290, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     label(L"纠错级别", 16, 312, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     label(L"图片尺寸", 16, 366, 120, 18, g_fonts.hint, g_theme.textDim,
@@ -403,13 +408,20 @@ void paintSettings(HWND hwnd, HDC hdc) {
     label(L"保存目录", 16, 424, 120, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    label(L"界面风格", 16, 484, 200, 18, g_fonts.hint, g_theme.textDim,
+    label(L"界面风格", 16, 482, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     label(L"颜色模式", 16, 540, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     label(L"Win32 走系统主题引擎;WinUI 3 用系统主色与官方图标字体;点“保存并重启”立即生效。",
-          16, 594, clientWidth - S(32), 18, g_fonts.hint, g_theme.textDim,
+          16, 594, clientWidth - S(180), 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    {
+        // clientWidth is already in physical pixels, so draw it directly instead of via label().
+        RECT versionRect = {clientWidth - S(160), S(594), clientWidth - S(16), S(612)};
+        std::wstring version = std::wstring(L"v") + kAppVersion;
+        drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, version.c_str(), versionRect,
+                    DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
 
     // Field frames: themed by the OS in classic mode, Fluent surfaces otherwise.
     paintFieldFrame(hwnd, hdc, st->rects.sizeField, g_theme.radius);
@@ -621,10 +633,10 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                 RECT client;
                 GetClientRect(hwnd, &client);
                 PaintBuffer buffer = beginPaintBuffer(hwnd, client);
-                paintSettings(hwnd, buffer.dc);
+                paintSettings(hwnd, buffer.dc, ps.rcPaint);
                 endPaintBuffer(hwnd, buffer);
             } else {
-                paintSettings(hwnd, dc);
+                paintSettings(hwnd, dc, ps.rcPaint);
             }
             EndPaint(hwnd, &ps);
             return 0;
@@ -697,7 +709,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
             if (id == IDC_SIZE_EDIT && notification == EN_CHANGE) {
                 wchar_t text[16] = {0};
                 GetWindowTextW(st->sizeEdit, text, ARRAYSIZE(text));
-                int value = _wtoi(text);
+                int value = tu::toInt(text);
                 if (value >= 160 && value <= 1200) st->qrSize = value;
                 return 0;
             }
@@ -824,6 +836,7 @@ HWND createSettingsWindow() {
         registered = true;
     }
 
+    ensureFonts();
     HWND hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, kWndClassSettings, L"设置",
                                 WS_POPUP | WS_CLIPCHILDREN, 0, 0,
                                 S(kWidth), S(kHeight), nullptr, nullptr, g_hinst, nullptr);
