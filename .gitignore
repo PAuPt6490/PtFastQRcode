@@ -24,3 +24,6 @@ __pycache__/
 
 # 临时截图
 /tools/renamed-*.png
+
+# local publish script
+/tools/publish_github.ps1
