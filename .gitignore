@@ -31,3 +31,5 @@ __pycache__/
 # scratch test output
 /tools/patch_*.py
 /tools/*.png.txt
+
+/tools/icon256-check.png
