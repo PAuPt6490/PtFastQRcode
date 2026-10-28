@@ -228,6 +228,16 @@ LRESULT CALLBACK ControllerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
         }
 
         case WM_SETTINGCHANGE:
+            // Only the "follow system" theme has to react to a Windows theme switch.
+            if (g_settings.theme == 1 && lParam &&
+                wcscmp((const wchar_t*)lParam, L"ImmersiveColorSet") == 0) {
+                HWND popup = g_popup;
+                g_popup = nullptr;
+                if (popup) DestroyWindow(popup);
+                if (g_settingsWnd) DestroyWindow(g_settingsWnd);
+                applyTheme(g_settings.theme);
+                rebuildTrayIcon();
+            }
             return 0;
 
         case WM_TIMER:
