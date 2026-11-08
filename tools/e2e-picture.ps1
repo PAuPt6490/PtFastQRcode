@@ -18,6 +18,8 @@ public static class W {
     [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] public static extern int GetWindowTextW(IntPtr hwnd, StringBuilder text, int count);
     [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] public static extern int GetWindowTextLengthW(IntPtr hwnd);
     [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] public static extern bool PostMessageW(IntPtr hwnd, uint msg, IntPtr w, IntPtr l);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] public static extern IntPtr SendMessageW(IntPtr hwnd, uint msg, IntPtr w, StringBuilder l);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, ExactSpelling=true)] public static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll", ExactSpelling=true)] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
 }
@@ -40,27 +42,27 @@ $bitmap.Dispose()
 [System.Windows.Forms.Clipboard]::SetImage([System.Drawing.Image]::FromFile($sourcePath))
 Start-Sleep -Milliseconds 200
 
-# 2. Wake the popup through the global hotkey message the controller listens for.
+# 2. Open the popup through the controller's "show" message. That message toggles when the
+#    window already has focus, so post it again if it happened to close the window instead.
 $controller = [W]::FindWindowW('PtFastQRcodeController', [NullString]::Value)
 if ($controller -eq [IntPtr]::Zero) { throw 'controller window not found' }
 
-# wParam is the hotkey id (1), lParam carries mods<<16 | vk.
-$lparam = ([uint32]$Mods -shl 16) -bor [uint32]$Vk
-[void][W]::PostMessageW($controller, 0x0312, [IntPtr]1, [IntPtr]$lparam)
-
 $popup = [IntPtr]::Zero
-for ($i = 0; $i -lt 60 -and $popup -eq [IntPtr]::Zero; $i++) {
-    Start-Sleep -Milliseconds 100
-    $popup = [W]::FindWindowW('PtFastQRcodePopup', [NullString]::Value)
+for ($i = 0; $i -lt 10 -and $popup -eq [IntPtr]::Zero; $i++) {
+    [void][W]::PostMessageW($controller, 0x800A, [IntPtr]::Zero, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 400
+    $candidate = [W]::FindWindowW('PtFastQRcodePopup', [NullString]::Value)
+    if ($candidate -ne [IntPtr]::Zero -and [W]::IsWindowVisible($candidate)) { $popup = $candidate }
 }
 if ($popup -eq [IntPtr]::Zero) { throw 'popup window not found' }
 
+# The popup reads the clipboard when it becomes visible; the link appears a moment later.
 $edit = [W]::FindWindowExW($popup, [IntPtr]::Zero, 'EDIT', [NullString]::Value)
 if ($edit -eq [IntPtr]::Zero) { throw 'edit control not found' }
-$length = [W]::GetWindowTextLengthW($edit)
-$buffer = New-Object System.Text.StringBuilder ($length + 2)
-[void][W]::GetWindowTextW($edit, $buffer, $length + 2)
-$link = $buffer.ToString()
+Start-Sleep -Milliseconds 700
+$buffer = New-Object System.Text.StringBuilder 512
+[void][W]::SendMessageW($edit, 0x000D, [IntPtr]512, $buffer)
+$link = $buffer.ToString().Trim()
 "field text: $link"
 
 if ($link -notmatch '^http://\d+\.\d+\.\d+\.\d+:\d+/s/[0-9a-f]{16}$') {

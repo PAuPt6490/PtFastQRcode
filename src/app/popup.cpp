@@ -2,6 +2,7 @@
 
 #include "text_util.h"
 
+#include <commctrl.h>
 #include <commdlg.h>
 #include <windowsx.h>
 
@@ -9,6 +10,7 @@
 #include <string>
 
 #include "resource.h"
+#include "net/httpd.h"
 
 namespace {
 
@@ -68,6 +70,12 @@ struct PopupState {
     bool messageIsError = false;
     bool suppressDeactivate = false;
 
+    // Set when the field holds a link to a picture this process is serving: the card then
+    // shows a thumbnail of that picture next to the code.
+    bool pictureMode = false;
+    std::wstring pictureUrl;
+    PicturePreview preview = {};
+
     Layout layout;
 };
 
@@ -109,6 +117,15 @@ std::wstring getClipboardText() {
 std::wstring defaultStatusText() {
     return g_settings.closeOnBlur ? L"点击窗口外自动关闭  ·  Esc 退出"
                                   : L"点击窗口外不关闭  ·  Esc 退出";
+}
+
+std::wstring pixelSizeText(int width, int height) {
+    if (width <= 0 || height <= 0) return std::wstring();
+    wchar_t left[16];
+    wchar_t right[16];
+    tu::formatUnsigned(left, 16, (unsigned long)width);
+    tu::formatUnsigned(right, 16, (unsigned long)height);
+    return std::wstring(left) + L"×" + right;
 }
 
 // The common dialog pulls Explorer shell extensions into whichever process opens it and
@@ -256,6 +273,12 @@ void refreshQr(HWND hwnd) {
     st->error.clear();
 
     std::wstring text = getEditText(st->edit);
+    if (st->pictureMode && tu::compare(text.c_str(), st->pictureUrl.c_str()) != 0) {
+        // The link was edited or replaced: the thumbnail no longer describes the content.
+        st->pictureMode = false;
+        st->pictureUrl.clear();
+        releasePicturePreview(st->preview);
+    }
     if (!text.empty()) {
         qr::EncodeOptions options;
         options.ecc = (qr::Ecc)std::max(0, std::min(3, g_settings.eccLevel));
@@ -267,6 +290,74 @@ void refreshQr(HWND hwnd) {
         }
     }
     InvalidateRect(hwnd, &st->layout.card, FALSE);
+}
+
+// The code keeps the middle of the card, so in picture mode the thumbnails goes into the
+// gutter the quiet zone leaves free on the left, with the two sizes that matter below it.
+// Everything is measured off the rectangle drawQrSymbol() works with, so both stay aligned
+// at any window size and the thumbnail can never land on the modules.
+void drawPreviewThumb(HDC hdc, const RECT& card, const PopupState* st) {
+    const PicturePreview& preview = st->preview;
+    if (!preview.bitmap || preview.width <= 0 || preview.height <= 0) return;
+
+    const int cardWidth = card.right - card.left;
+    const int cardHeight = card.bottom - card.top;
+    if (cardWidth <= 0 || cardHeight <= 0 || st->symbol.size <= 0) return;
+
+    int side = (cardWidth < cardHeight ? cardWidth : cardHeight) - S(28);
+    if (side < 8) side = cardWidth < cardHeight ? cardWidth : cardHeight;
+    const int modules = st->symbol.size + 8;
+    int module = side / modules;
+    if (module < 1) module = 1;
+    const int drawn = module * modules;
+    const int gutter = (cardWidth - drawn) / 2;
+
+    const int captionBlock = S(38);
+    const int maxWidth = gutter - S(10);
+    const int maxHeight = cardHeight - captionBlock - S(10);
+    if (maxWidth < S(44) || maxHeight < S(36)) return;
+
+    float scale = (float)maxWidth / (float)preview.width;
+    const float byHeight = (float)maxHeight / (float)preview.height;
+    if (byHeight < scale) scale = byHeight;
+    int thumbWidth = (int)(preview.width * scale + 0.5f);
+    int thumbHeight = (int)(preview.height * scale + 0.5f);
+    if (thumbWidth < 1) thumbWidth = 1;
+    if (thumbHeight < 1) thumbHeight = 1;
+
+    RECT box;
+    box.left = card.left + (gutter - thumbWidth) / 2;
+    box.top = card.top + (cardHeight - captionBlock - thumbHeight) / 2;
+    if (box.top < card.top + S(6)) box.top = card.top + S(6);
+    box.right = box.left + thumbWidth;
+    box.bottom = box.top + thumbHeight;
+
+    HDC memory = CreateCompatibleDC(hdc);
+    if (memory) {
+        HGDIOBJ previous = SelectObject(memory, preview.bitmap);
+        if (previous && previous != HGDI_ERROR) {
+            BLENDFUNCTION blend = {AC_SRC_OVER, 0, 255, AC_SRC_ALPHA};
+            GdiAlphaBlend(hdc, box.left, box.top, thumbWidth, thumbHeight, memory, 0, 0,
+                          preview.width, preview.height, blend);
+            SelectObject(memory, previous);
+        }
+        DeleteDC(memory);
+    }
+    drawRoundRect(hdc, box, S(4), CLR_NONE, g_theme.cardBorder, 1);
+
+    const int captionLeft = card.left + S(4);
+    const int captionRight = card.left + gutter - S(4);
+    if (captionRight - captionLeft < S(30)) return;
+
+    std::wstring source = pixelSizeText(preview.sourceWidth, preview.sourceHeight);
+    RECT first = {captionLeft, box.bottom + S(6), captionRight, box.bottom + S(22)};
+    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, source.c_str(), first,
+                DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+
+    std::wstring served = L"→ " + pixelSizeText(preview.linkWidth, preview.linkHeight);
+    RECT second = {captionLeft, first.bottom, captionRight, first.bottom + S(16)};
+    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, served.c_str(), second,
+                DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
 // Paints only the parts that intersect the invalidated rectangle: when a status line
@@ -325,6 +416,7 @@ void paintPopup(HWND hwnd, HDC hdc, const RECT& dirty) {
         RECT card = st->layout.card;
         if (st->hasSymbol) {
             drawQrSymbol(hdc, card, st->symbol, S(28));
+            if (st->pictureMode) drawPreviewThumb(hdc, card, st);
         } else {
             std::wstring placeholder = st->error.empty() ? L"粘贴或输入内容后自动生成" : st->error;
             RECT textRect = card;
@@ -406,6 +498,9 @@ bool tryPublishPicture(HWND hwnd) {
 
     st->hasSymbol = false;
     st->error.clear();
+    st->pictureMode = false;
+    st->pictureUrl.clear();
+    releasePicturePreview(st->preview);
 
     if (!g_settings.imageServer) {
         SetWindowTextW(st->edit, L"");
@@ -415,7 +510,18 @@ bool tryPublishPicture(HWND hwnd) {
     }
 
     std::wstring url;
-    if (!publishClipboardPicture(url)) {
+    // The server is opened here, on the first picture, and closed again by the controller
+    // once the links have expired.
+    if (!net::running()) net::start(g_controller);
+    if (!net::running()) {
+        setStatus(hwnd, st, L"本机没有可用的局域网地址", true);
+        return true;
+    }
+    const bool published = publishClipboardPicture(url, st->preview);
+    // Handling a full size picture leaves a few megabytes of freed pages behind; give them
+    // back right away instead of keeping them for as long as the popup stays open.
+    trimProcessMemory();
+    if (!published) {
         setStatus(hwnd, st, L"图片链接生成失败", true);
         return true;
     }
@@ -423,6 +529,8 @@ bool tryPublishPicture(HWND hwnd) {
     // The link is the QR content, so it shows up in the field and the symbol is rebuilt
     // from it: scanning the QR code opens the page that shows the picture.
     SetWindowTextW(st->edit, url.c_str());
+    st->pictureMode = true;
+    st->pictureUrl = url;
     refreshQr(hwnd);
     setStatus(hwnd, st, L"已生成图片链接(5 分钟内有效)", false);
     return true;
@@ -442,19 +550,6 @@ void pasteFromClipboard(HWND hwnd) {
     SetFocus(st->edit);
     refreshQr(hwnd);
     setStatus(hwnd, st, L"已从剪贴板粘贴", false);
-}
-
-// Returns the pages freed by tearing the window down: compact the heap first so the
-// commit charge actually drops, then empty the working set.
-void trimProcessMemory() {
-    // Declared locally: the SDK hides these behind a Windows 10 target version, but the
-    // call is harmless on anything older (it simply fails).
-    struct HeapOptimizeInfo {
-        DWORD Version;
-        DWORD Flags;
-    } optimize = {1, 0};
-    HeapSetInformation(GetProcessHeap(), (HEAP_INFORMATION_CLASS)3, &optimize, sizeof(optimize));
-    SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
 }
 
 // Hiding also destroys the window: a hidden popup would otherwise keep its edit control,
@@ -695,6 +790,7 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
             if (st) {
                 if (st->icon) DestroyIcon(st->icon);
                 if (st->editBrush) DeleteObject(st->editBrush);
+                releasePicturePreview(st->preview);
                 delete st;
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
             }
@@ -709,6 +805,19 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
 }
 
 }  // namespace
+
+// Returns the pages freed by tearing the window down: compact the heap first so the
+// commit charge actually drops, then empty the working set.
+void trimProcessMemory() {
+    // Declared locally: the SDK hides these behind a Windows 10 target version, but the
+    // call is harmless on anything older (it simply fails).
+    struct HeapOptimizeInfo {
+        DWORD Version;
+        DWORD Flags;
+    } optimize = {1, 0};
+    HeapSetInformation(GetProcessHeap(), (HEAP_INFORMATION_CLASS)3, &optimize, sizeof(optimize));
+    SetProcessWorkingSetSize(GetCurrentProcess(), (SIZE_T)-1, (SIZE_T)-1);
+}
 
 HWND createPopupWindow() {
     static bool registered = false;

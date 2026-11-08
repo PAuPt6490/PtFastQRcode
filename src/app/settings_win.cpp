@@ -362,10 +362,12 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
     saveSettings();
     applyAutostart(st->toggleValues[3]);
 
-    // The listening socket can be opened or closed on the spot, so a save without the
-    // restart button still makes the picture link work immediately.
-    if (g_settings.imageServer && !net::running()) net::start(g_controller);
-    if (!g_settings.imageServer && net::running()) net::stop();
+    // Turning the option off releases the socket and the network stack at once; turning it on
+    // needs nothing here, because the server starts with the first picture that needs it.
+    if (!g_settings.imageServer && net::running()) {
+        net::stop();
+        trimProcessMemory();
+    }
 
     int style = st->style;
     HWND popup = g_popup;

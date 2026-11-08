@@ -52,6 +52,13 @@ int g_connectionCount = 0;
 bool g_wsaReady = false;
 uint32_t g_randomState = 0;
 
+// Drops the Winsock stack once nothing uses it any more.
+void dropWsa() {
+    if (!g_wsaReady) return;
+    WSACleanup();
+    g_wsaReady = false;
+}
+
 // ---------------------------------------------------------------- connections
 
 bool isTracked(SOCKET socket) {
@@ -486,10 +493,16 @@ bool start(HWND window) {
     }
 
     const std::wstring address = localAddress();
-    if (address.empty()) return false;
+    if (address.empty()) {
+        dropWsa();
+        return false;
+    }
 
     SOCKET listening = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (listening == INVALID_SOCKET) return false;
+    if (listening == INVALID_SOCKET) {
+        dropWsa();
+        return false;
+    }
 
     const BOOL exclusive = TRUE;
     setsockopt(listening, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&exclusive,
@@ -503,6 +516,7 @@ bool start(HWND window) {
         listen(listening, 16) != 0 ||
         WSAAsyncSelect(listening, window, WM_APP_HTTP, FD_ACCEPT | FD_CLOSE) != 0) {
         closesocket(listening);
+        dropWsa();
         return false;
     }
 
@@ -526,11 +540,18 @@ void stop() {
     g_base.clear();
     for (int i = 0; i < kMaxCache; ++i) clearEntry(g_cache[i]);
     g_cacheCount = 0;
-    // WSACleanup is never called: ws2_32 stays loaded for the life of the process and
-    // tearing the stack down would only make a later restart slower.
+    // Unload the stack as well: starting it again later costs a few milliseconds, whereas
+    // staying loaded keeps megabytes of provider state committed for nothing.
+    dropWsa();
 }
 
 bool running() { return g_listen != INVALID_SOCKET; }
+
+bool idle() {
+    if (!running()) return false;
+    expireEntries();
+    return g_cacheCount == 0 && g_connectionCount == 0;
+}
 
 std::wstring baseUrl() { return g_base; }
 

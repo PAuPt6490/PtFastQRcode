@@ -191,8 +191,29 @@ std::wstring defaultFileNameFor(const std::wstring& content);
 // Copies whatever bitmap the clipboard holds into a PNG of at most kPictureMaxPixels
 // pixels and hands it to the LAN server. Returns false when the clipboard holds no picture.
 bool clipboardHasPicture();
-bool publishClipboardPicture(std::wstring& url);
-constexpr int kPictureMaxPixels = 720;
+
+// Returns the pages freed by tearing a window down: compacts the heap and trims the working
+// set, so a window that was shown once does not leave its footprint behind.
+void trimProcessMemory();
+
+// Small stand-in for the pasted picture so the popup can show what it is about to serve:
+// a thumbnail bitmap (owned by the caller, freed with releasePicturePreview) plus the
+// sizes that matter - as it arrived, and as it is served.
+struct PicturePreview {
+    HBITMAP bitmap;
+    int width;         // thumbnail, in pixels
+    int height;
+    int sourceWidth;   // clipboard size
+    int sourceHeight;
+    int linkWidth;     // published size
+    int linkHeight;
+};
+
+bool publishClipboardPicture(std::wstring& url, PicturePreview& preview);
+void releasePicturePreview(PicturePreview& preview);
+
+constexpr int kPictureMaxPixels = 720;  // longest side of the published picture
+constexpr int kPreviewMaxPixels = 256;  // longest side of the thumbnail kept in memory
 
 // ------------------------------------------------------------------- hotkey
 

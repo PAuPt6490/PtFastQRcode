@@ -59,7 +59,7 @@ if (-not $ok) {
     Write-Host "used screen capture"
 }
 
-$path = Join-Path (Get-Location) $Out
+$path = if ([System.IO.Path]::IsPathRooted($Out)) { $Out } else { Join-Path (Get-Location) $Out }
 $bitmap.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
 $bitmap.Dispose()
 Write-Host "saved $path ($width x $height)"

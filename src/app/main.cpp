@@ -20,6 +20,7 @@ namespace {
 constexpr int kTrayId = 1;
 constexpr int kHotkeyIdValue = 1;
 constexpr UINT kFirstShowTimer = 10;
+constexpr UINT kIdleTimer = 11;
 
 constexpr UINT IDM_SHOW = 4001;
 constexpr UINT IDM_SETTINGS = 4002;
@@ -250,6 +251,13 @@ LRESULT CALLBACK ControllerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
             if (wParam == kFirstShowTimer) {
                 KillTimer(hwnd, kFirstShowTimer);
                 showPopup();
+            } else if (wParam == kIdleTimer) {
+                // The picture server costs several megabytes of committed memory, so it only
+                // lives while it still has something to serve.
+                if (net::running() && net::idle()) {
+                    net::stop();
+                    trimProcessMemory();
+                }
             }
             return 0;
 
@@ -581,9 +589,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
 
     addTrayIcon();
     buildAccelerators();
-    // The LAN server only opens a socket when the option is on, so a plain tray start
-    // never touches the network stack.
-    if (g_settings.imageServer) net::start(g_controller);
+    // The LAN server is started on demand, the first time a picture is pasted, so a plain
+    // tray start never touches the network stack (several MB of committed memory).
+    SetTimer(g_controller, kIdleTimer, 15000, nullptr);
 
     if (!registerAppHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk)) {
         std::wstring message = L"快捷键 " + formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk) +

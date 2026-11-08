@@ -45,6 +45,10 @@ void stop();
 // True while the listening socket exists.
 bool running();
 
+// True when nothing is cached and no connection is open: the server has nothing left to do
+// and can be stopped to give its memory back.
+bool idle();
+
 // Printed address for the QR code, e.g. "http://192.168.1.23:51422".
 std::wstring baseUrl();
 
