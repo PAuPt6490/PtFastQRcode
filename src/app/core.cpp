@@ -132,6 +132,7 @@ void loadSettings() {
     g_settings.popupWidth = 400;
     g_settings.popupHeight = 470;
     g_settings.imageServer = false;
+    g_settings.linkMinutes = 5;
     g_settings.saveDir = defaultSaveDir();
 
     HKEY key = nullptr;
@@ -165,6 +166,7 @@ void loadSettings() {
         g_settings.popupWidth = regReadInt(key, L"PopupWidth", g_settings.popupWidth);
         g_settings.popupHeight = regReadInt(key, L"PopupHeight", g_settings.popupHeight);
         g_settings.imageServer = regReadBool(key, L"ImageServer", g_settings.imageServer);
+        g_settings.linkMinutes = regReadInt(key, L"LinkMinutes", g_settings.linkMinutes);
         g_settings.saveDir = regReadString(key, L"SaveDir", g_settings.saveDir);
         RegCloseKey(key);
     }
@@ -181,6 +183,7 @@ void loadSettings() {
     g_settings.qrSize = std::max(160, std::min(1200, g_settings.qrSize));
     g_settings.popupWidth = std::max(340, std::min(1400, g_settings.popupWidth));
     g_settings.popupHeight = std::max(400, std::min(1600, g_settings.popupHeight));
+    g_settings.linkMinutes = std::max(1, std::min(120, g_settings.linkMinutes));
     if (g_settings.saveDir.empty()) g_settings.saveDir = defaultSaveDir();
     g_settings.autostart = isAutostartEnabled();
 }
@@ -214,6 +217,7 @@ void saveSettings() {
     writeDword(L"PopupWidth", (DWORD)g_settings.popupWidth);
     writeDword(L"PopupHeight", (DWORD)g_settings.popupHeight);
     writeDword(L"ImageServer", g_settings.imageServer ? 1 : 0);
+    writeDword(L"LinkMinutes", g_settings.linkMinutes);
     RegSetValueExW(key, L"SaveDir", 0, REG_SZ, (const BYTE*)g_settings.saveDir.c_str(),
                    (DWORD)((g_settings.saveDir.size() + 1) * sizeof(wchar_t)));
     RegCloseKey(key);

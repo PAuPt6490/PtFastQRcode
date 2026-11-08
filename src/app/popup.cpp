@@ -19,6 +19,7 @@ constexpr int IDC_BTN_SAVE = ID_POPUP_SAVE;
 constexpr int IDC_BTN_COPY = ID_POPUP_COPY;
 constexpr int IDC_BTN_PASTE = 2004;
 constexpr int IDC_BTN_SETTINGS = 2005;
+constexpr int IDC_BTN_PICK = 2007;
 constexpr int IDC_BTN_CLOSE = ID_POPUP_CLOSE;
 
 constexpr UINT TIMER_DEBOUNCE = 1;
@@ -29,6 +30,7 @@ const BtnSpec kButtons[] = {
     {IDC_BTN_SAVE, BtnKind::Primary, L"保存图片"},
     {IDC_BTN_COPY, BtnKind::Secondary, L"复制图片"},
     {IDC_BTN_PASTE, BtnKind::Secondary, L"粘贴"},
+    {IDC_BTN_PICK, BtnKind::Secondary, L"选图"},
     {IDC_BTN_SETTINGS, BtnKind::IconSliders, L""},
     {IDC_BTN_CLOSE, BtnKind::IconClose, L""},
 };
@@ -47,6 +49,7 @@ struct Layout {
     RECT btnSave;
     RECT btnCopy;
     RECT btnPaste;
+    RECT btnPick;
     RECT btnSettings;
     RECT btnClose;
 };
@@ -56,6 +59,7 @@ struct PopupState {
     HWND btnSave = nullptr;
     HWND btnCopy = nullptr;
     HWND btnPaste = nullptr;
+    HWND btnPick = nullptr;
     HWND btnSettings = nullptr;
     HWND btnClose = nullptr;
 
@@ -75,6 +79,9 @@ struct PopupState {
     bool pictureMode = false;
     std::wstring pictureUrl;
     PicturePreview preview = {};
+
+    // Directory of the last picture chosen from disk, so the file picker reopens there.
+    std::wstring imageDir;
 
     Layout layout;
 };
@@ -128,25 +135,15 @@ std::wstring pixelSizeText(int width, int height) {
     return std::wstring(left) + L"×" + right;
 }
 
-// The common dialog pulls Explorer shell extensions into whichever process opens it and
-// COM keeps them loaded (~10 MB that never comes back). So the dialog runs in a
-// short-lived copy of this executable instead, and only the chosen path comes back.
-bool pickSavePathInChild(const std::wstring& initialDir, const std::wstring& suggestedName,
-                         std::wstring& chosenPath) {
-    std::vector<wchar_t> temporary(MAX_PATH, 0);
-    if (!GetTempPathW(MAX_PATH, temporary.data())) return false;
-    std::vector<wchar_t> resultPath(MAX_PATH, 0);
-    if (!GetTempFileNameW(temporary.data(), L"ptq", 0, resultPath.data())) return false;
-
+// Runs a copy of this executable that shows one dialog and writes the chosen path to a
+// temp file, then returns that path. Shared by the save dialog and the picture picker.
+bool runPickerChild(const std::wstring& commandLine, std::vector<wchar_t>& resultPath,
+                    std::wstring& chosenPath) {
     std::vector<wchar_t> module(MAX_PATH, 0);
     if (!GetModuleFileNameW(nullptr, module.data(), MAX_PATH)) {
         DeleteFileW(resultPath.data());
         return false;
     }
-
-    std::wstring commandLine = L"\"" + std::wstring(module.data()) + L"\" --pick-save \"" +
-                               std::wstring(resultPath.data()) + L"\" \"" + initialDir + L"\" \"" +
-                               suggestedName + L"\"";
 
     STARTUPINFOW startup = {sizeof(startup)};
     PROCESS_INFORMATION process = {};
@@ -197,6 +194,57 @@ bool pickSavePathInChild(const std::wstring& initialDir, const std::wstring& sug
     return picked;
 }
 
+bool makeResultPath(std::vector<wchar_t>& resultPath) {
+    std::vector<wchar_t> temporary(MAX_PATH, 0);
+    if (!GetTempPathW(MAX_PATH, temporary.data())) return false;
+    resultPath.assign(MAX_PATH, 0);
+    return GetTempFileNameW(temporary.data(), L"ptq", 0, resultPath.data()) != FALSE;
+}
+
+std::wstring modulePath() {
+    std::vector<wchar_t> module(MAX_PATH, 0);
+    if (!GetModuleFileNameW(nullptr, module.data(), MAX_PATH)) return std::wstring();
+    return std::wstring(module.data());
+}
+
+// The common dialog pulls Explorer shell extensions into whichever process opens it and
+// COM keeps them loaded (~10 MB that never comes back). So the dialog runs in a
+// short-lived copy of this executable instead, and only the chosen path comes back.
+bool pickSavePathInChild(const std::wstring& initialDir, const std::wstring& suggestedName,
+                         std::wstring& chosenPath) {
+    std::vector<wchar_t> resultPath;
+    if (!makeResultPath(resultPath)) return false;
+
+    const std::wstring module = modulePath();
+    if (module.empty()) {
+        DeleteFileW(resultPath.data());
+        return false;
+    }
+
+    const std::wstring commandLine = L"\"" + module + L"\" --pick-save \"" +
+                                     std::wstring(resultPath.data()) + L"\" \"" + initialDir +
+                                     L"\" \"" + suggestedName + L"\"";
+    return runPickerChild(commandLine, resultPath, chosenPath);
+}
+
+// Same trick for choosing a picture file to serve: the Explorer picker loads the same shell
+// extensions, so it opens in a throwaway copy of this process.
+bool pickImagePathInChild(const std::wstring& initialDir, std::wstring& chosenPath) {
+    std::vector<wchar_t> resultPath;
+    if (!makeResultPath(resultPath)) return false;
+
+    const std::wstring module = modulePath();
+    if (module.empty()) {
+        DeleteFileW(resultPath.data());
+        return false;
+    }
+
+    const std::wstring commandLine = L"\"" + module + L"\" --pick-image \"" +
+                                     std::wstring(resultPath.data()) + L"\" \"" + initialDir +
+                                     L"\"";
+    return runPickerChild(commandLine, resultPath, chosenPath);
+}
+
 std::wstring baseName(const std::wstring& path) {
     size_t slash = tu::lastPathSeparator(path);
     return slash == std::wstring::npos ? path : path.substr(slash + 1);
@@ -228,7 +276,12 @@ void layoutControls(HWND hwnd, PopupState* st) {
 
     l.contentLabel = {S(14), S(54), width - S(14), S(68)};
     l.field = {S(14), S(70), width - S(14), S(128)};
-    l.edit = {S(21), S(77), width - S(21), S(121)};
+
+    // The picture picker belongs to the input, not to the action row: it sits at the right
+    // end of the text field, like a browse button next to a file name box.
+    const int pickWidth = S(48);
+    l.btnPick = {width - S(14) - S(7) - pickWidth, S(78), width - S(14) - S(7), S(120)};
+    l.edit = {S(21), S(77), l.btnPick.left - S(8), S(121)};
 
     l.card = {S(14), S(134), width - S(14), height - S(100)};
     if (l.card.bottom < l.card.top + S(80)) l.card.bottom = l.card.top + S(80);
@@ -238,9 +291,20 @@ void layoutControls(HWND hwnd, PopupState* st) {
 
     const int buttonTop = height - S(72);
     const int buttonBottom = height - S(36);
-    l.btnSave = {S(14), buttonTop, S(154), buttonBottom};
-    l.btnCopy = {S(162), buttonTop, S(262), buttonBottom};
-    l.btnPaste = {S(270), buttonTop, width - S(14), buttonBottom};
+    // Three action buttons share the row. The widths are proportional so the row still fits
+    // the narrowest window size without any label being clipped.
+    const int gap = S(8);
+    const int usable = (width - S(28)) - gap * 2;
+    int x = S(14);
+    auto nextButton = [&](float weight) {
+        const int w = (int)(usable * weight);
+        RECT r = {x, buttonTop, x + w, buttonBottom};
+        x += w + gap;
+        return r;
+    };
+    l.btnSave = nextButton(0.32f);
+    l.btnCopy = nextButton(0.32f);
+    l.btnPaste = {x, buttonTop, width - S(14), buttonBottom};
 
     l.btnSettings = {width - S(82), S(10), width - S(52), S(40)};
     l.btnClose = {width - S(46), S(10), width - S(16), S(40)};
@@ -254,6 +318,7 @@ void layoutControls(HWND hwnd, PopupState* st) {
     place(st->btnSave, l.btnSave);
     place(st->btnCopy, l.btnCopy);
     place(st->btnPaste, l.btnPaste);
+    place(st->btnPick, l.btnPick);
     place(st->btnSettings, l.btnSettings);
     place(st->btnClose, l.btnClose);
 }
@@ -491,10 +556,11 @@ void copyImage(HWND hwnd) {
 }
 
 // A picture cannot ride in a QR code, so with the LAN server on it becomes a link that the
-// phone can open; the picture itself lives in memory on the server for five minutes.
-bool tryPublishPicture(HWND hwnd) {
+// phone can open; the picture itself lives in memory on the server for the configured
+// lifetime. Both sources (clipboard, file) land here.
+bool publishPictureSource(HWND hwnd, const std::wstring& filePath, bool fromFile) {
     PopupState* st = getState(hwnd);
-    if (!st || !clipboardHasPicture()) return false;
+    if (!st) return false;
 
     st->hasSymbol = false;
     st->error.clear();
@@ -512,17 +578,20 @@ bool tryPublishPicture(HWND hwnd) {
     std::wstring url;
     // The server is opened here, on the first picture, and closed again by the controller
     // once the links have expired.
+    net::setLifetime(g_settings.linkMinutes);
     if (!net::running()) net::start(g_controller);
     if (!net::running()) {
         setStatus(hwnd, st, L"本机没有可用的局域网地址", true);
         return true;
     }
-    const bool published = publishClipboardPicture(url, st->preview);
+
+    const bool published = fromFile ? publishFilePicture(filePath, url, st->preview)
+                                    : publishClipboardPicture(url, st->preview);
     // Handling a full size picture leaves a few megabytes of freed pages behind; give them
     // back right away instead of keeping them for as long as the popup stays open.
     trimProcessMemory();
     if (!published) {
-        setStatus(hwnd, st, L"图片链接生成失败", true);
+        setStatus(hwnd, st, fromFile ? L"打不开这张图片" : L"图片链接生成失败", true);
         return true;
     }
 
@@ -532,8 +601,38 @@ bool tryPublishPicture(HWND hwnd) {
     st->pictureMode = true;
     st->pictureUrl = url;
     refreshQr(hwnd);
-    setStatus(hwnd, st, L"已生成图片链接(5 分钟内有效)", false);
+    wchar_t minutes[16];
+    tu::formatUnsigned(minutes, 16, (unsigned long)g_settings.linkMinutes);
+    std::wstring status = L"已生成图片链接(";
+    status += minutes;
+    status += L" 分钟内有效)";
+    setStatus(hwnd, st, status.c_str(), false);
     return true;
+}
+
+bool tryPublishPicture(HWND hwnd) {
+    if (!clipboardHasPicture()) return false;
+    return publishPictureSource(hwnd, std::wstring(), false);
+}
+
+// Manual route: pick a picture file, serve it exactly like a pasted one.
+void pickPictureFile(HWND hwnd) {
+    PopupState* st = getState(hwnd);
+    if (!st) return;
+
+    std::wstring initial = st->imageDir;
+    if (initial.empty()) initial = g_settings.saveDir;
+
+    st->suppressDeactivate = true;
+    std::wstring path;
+    const bool picked = pickImagePathInChild(initial, path);
+    st->suppressDeactivate = false;
+    if (!picked) return;
+
+    st->imageDir = directoryOf(path);
+    if (!publishPictureSource(hwnd, path, true)) {
+        setStatus(hwnd, st, L"图片链接生成失败", true);
+    }
 }
 
 void pasteFromClipboard(HWND hwnd) {
@@ -597,6 +696,7 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
                 {&st->btnSave, IDC_BTN_SAVE, L"保存图片"},
                 {&st->btnCopy, IDC_BTN_COPY, L"复制图片"},
                 {&st->btnPaste, IDC_BTN_PASTE, L"粘贴"},
+                {&st->btnPick, IDC_BTN_PICK, L"选图"},
                 {&st->btnSettings, IDC_BTN_SETTINGS, L""},
                 {&st->btnClose, IDC_BTN_CLOSE, L""},
             };
@@ -733,6 +833,9 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
                     return 0;
                 case IDC_BTN_PASTE:
                     pasteFromClipboard(hwnd);
+                    return 0;
+                case IDC_BTN_PICK:
+                    pickPictureFile(hwnd);
                     return 0;
                 case IDC_BTN_SETTINGS:
                     if (st) st->suppressDeactivate = true;

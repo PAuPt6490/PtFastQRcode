@@ -3,6 +3,7 @@
 #include "net/httpd.h"
 
 #include <commdlg.h>   // types only: comdlg32 is resolved at run time
+#include <shobjidl.h>  // IFileOpenDialog: the picture picker in --pick-image
 
 #include "text_util.h"
 
@@ -528,6 +529,67 @@ static int runSaveDialogHelper(const std::wstring& arguments) {
     return 0;
 }
 
+// Picture-picker helper: same isolation as the save dialog, but this is the Explorer file
+// dialog, so the user gets the familiar file manager with thumbnails and a file name box.
+static int runOpenImageDialogHelper(const std::wstring& arguments) {
+    const wchar_t* cursor = arguments.c_str();
+    takeQuotedArgument(cursor);  // --pick-image
+    const std::wstring resultPath = takeQuotedArgument(cursor);
+    const std::wstring initialDir = takeQuotedArgument(cursor);
+    if (resultPath.empty()) return 1;
+
+    ensureCom();
+
+    std::wstring chosen;
+    IFileOpenDialog* dialog = nullptr;
+    if (SUCCEEDED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+                                   IID_IFileOpenDialog, reinterpret_cast<void**>(&dialog)))) {
+        COMDLG_FILTERSPEC filters[] = {
+            {L"图片文件", L"*.png;*.jpg;*.jpeg;*.bmp;*.gif;*.webp"},
+            {L"所有文件", L"*.*"},
+        };
+        dialog->SetFileTypes(ARRAYSIZE(filters), filters);
+        DWORD options = 0;
+        if (SUCCEEDED(dialog->GetOptions(&options))) {
+            dialog->SetOptions(options | FOS_FILEMUSTEXIST | FOS_PATHMUSTEXIST |
+                               FOS_FORCEFILESYSTEM);
+        }
+        if (!initialDir.empty()) {
+            IShellItem* folder = nullptr;
+            if (SUCCEEDED(SHCreateItemFromParsingName(initialDir.c_str(), nullptr,
+                                                      IID_IShellItem,
+                                                      reinterpret_cast<void**>(&folder)))) {
+                dialog->SetFolder(folder);
+                folder->Release();
+            }
+        }
+        if (SUCCEEDED(dialog->Show(nullptr))) {
+            IShellItem* item = nullptr;
+            if (SUCCEEDED(dialog->GetResult(&item))) {
+                wchar_t* text = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &text))) {
+                    chosen.assign(text);
+                    CoTaskMemFree(text);
+                }
+                item->Release();
+            }
+        }
+        dialog->Release();
+    }
+
+    HANDLE file = CreateFileW(resultPath.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        if (!chosen.empty()) {
+            DWORD written = 0;
+            WriteFile(file, chosen.c_str(), (DWORD)(chosen.size() * sizeof(wchar_t)), &written,
+                      nullptr);
+        }
+        CloseHandle(file);
+    }
+    return 0;
+}
+
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCommand) {
     g_hinst = instance;
     (void)showCommand;
@@ -541,6 +603,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
     applyTheme(g_settings.theme);
 
     std::wstring arguments = commandLine ? commandLine : L"";
+    if (tu::contains(arguments.c_str(), L"--pick-image")) return runOpenImageDialogHelper(arguments);
     if (tu::contains(arguments.c_str(), L"--pick-save")) return runSaveDialogHelper(arguments);
     if (tu::contains(arguments.c_str(), L"--selftest")) return runSelfTest(arguments);
     bool startHidden = tu::contains(arguments.c_str(), L"--startup");

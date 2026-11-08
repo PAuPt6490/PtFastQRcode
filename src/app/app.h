@@ -21,7 +21,7 @@ extern const wchar_t* kWndClassHotkey;
 
 // Design size of the settings window, shared with the scale fit in wWinMain.
 constexpr int kSettingsWidth = 560;
-constexpr int kSettingsHeight = 724;
+constexpr int kSettingsHeight = 784;
 
 #define WM_APP_SHOW (WM_APP + 10)
 #define WM_APP_TRAY (WM_APP + 11)
@@ -69,6 +69,7 @@ struct Settings {
     int popupWidth;   // remembered popup size in design pixels
     int popupHeight;
     bool imageServer;  // paste a picture -> serve it to phones over the LAN as a link QR
+    int linkMinutes;   // how long that link stays alive, in minutes
     std::wstring saveDir;
 };
 
@@ -210,6 +211,11 @@ struct PicturePreview {
 };
 
 bool publishClipboardPicture(std::wstring& url, PicturePreview& preview);
+
+// Same thing for a picture on disk: decoded with WIC, then treated exactly like a pasted
+// one. The file itself is only read - never copied, never modified.
+bool publishFilePicture(const std::wstring& path, std::wstring& url, PicturePreview& preview);
+
 void releasePicturePreview(PicturePreview& preview);
 
 constexpr int kPictureMaxPixels = 720;  // longest side of the published picture

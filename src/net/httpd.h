@@ -42,6 +42,10 @@ bool start(HWND window);
 
 void stop();
 
+// How long a published link stays alive, in minutes (1..120). Takes effect on the next
+// expiry check, so changing it also shrinks links that are already out.
+void setLifetime(int minutes);
+
 // True while the listening socket exists.
 bool running();
 

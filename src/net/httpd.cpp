@@ -16,7 +16,7 @@
 namespace {
 
 constexpr int kMaxCache = 4;                // tokens kept at once (newest first)
-constexpr uint64_t kTtlMs = 5 * 60 * 1000;  // a link stops working after five minutes
+constexpr uint64_t kDefaultTtlMs = 5 * 60 * 1000;  // a link stops working after five minutes
 constexpr size_t kMaxReceive = 4096;        // a request head is a few hundred bytes
 constexpr int kMaxConnections = 8;
 constexpr DWORD kSocketTimeoutMs = 4000;
@@ -51,6 +51,7 @@ SOCKET g_connections[kMaxConnections];
 int g_connectionCount = 0;
 bool g_wsaReady = false;
 uint32_t g_randomState = 0;
+uint64_t g_ttlMs = kDefaultTtlMs;
 
 // Drops the Winsock stack once nothing uses it any more.
 void dropWsa() {
@@ -116,7 +117,7 @@ void dropEntry(int index) {
 void expireEntries() {
     const uint64_t now = GetTickCount64();
     for (int i = 0; i < g_cacheCount;) {
-        if (now - g_cache[i].born > kTtlMs)
+        if (now - g_cache[i].born > g_ttlMs)
             dropEntry(i);
         else
             ++i;
@@ -482,6 +483,12 @@ std::wstring localAddress() {
 }
 
 // ---------------------------------------------------------------- lifecycle
+
+void setLifetime(int minutes) {
+    if (minutes < 1) minutes = 1;
+    if (minutes > 120) minutes = 120;
+    g_ttlMs = (uint64_t)minutes * 60000u;
+}
 
 bool start(HWND window) {
     if (g_listen != INVALID_SOCKET) return true;

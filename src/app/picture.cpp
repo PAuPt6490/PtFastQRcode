@@ -1,10 +1,11 @@
 /* Clipboard picture -> LAN link.
  *
- * A pasted picture is not something a QR code can carry usefully, so the popup shows a
- * link to it instead: the picture is re-encoded as PNG (longest side capped at
- * kPictureMaxPixels so a 4K screenshot does not become megabytes) and published to the
- * small HTTP server in src/net. Everything stays on the private network and dies after
- * five minutes. Nothing here touches the file system.
+ * A picture is not something a QR code can carry usefully, so the popup shows a link to it
+ * instead: the picture is re-encoded as PNG (longest side capped at kPictureMaxPixels so a
+ * 4K screenshot does not become megabytes) and published to the small HTTP server in
+ * src/net. Everything stays on the private network and dies after the configured lifetime.
+ * Pasted pictures live only in memory; pictures chosen from disk are read once and never
+ * copied or modified.
  *
  * A thumbnail of the same picture comes back with the link so the popup can show which
  * picture it is about to serve; it is capped at kPreviewMaxPixels and lives only while
@@ -14,6 +15,7 @@
 
 #include <cstring>
 
+#include <wincodec.h>
 
 #include "net/httpd.h"
 
@@ -84,6 +86,57 @@ HBITMAP bitmapFromPixels(const BYTE* pixels, int width, int height) {
     }
     memcpy(bits, pixels, (size_t)width * (size_t)height * 4u);
     return bitmap;
+}
+
+// Decodes an image file (PNG/JPG/BMP/GIF/TIFF - whatever WIC has a codec for) into a
+// 32bpp DIB. The file is opened read-only and released before this returns; 'hasAlpha'
+// reports real transparency so the expensive normalising path only runs when it matters.
+HBITMAP bitmapFromFile(const std::wstring& path, bool& hasAlpha) {
+    hasAlpha = false;
+    if (path.empty() || !ensureCom()) return nullptr;
+
+    IWICImagingFactory* factory = nullptr;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                                IID_PPV_ARGS(&factory)))) {
+        return nullptr;
+    }
+
+    HBITMAP result = nullptr;
+    IWICBitmapDecoder* decoder = nullptr;
+    IWICBitmapFrameDecode* frame = nullptr;
+    IWICFormatConverter* converter = nullptr;
+
+    if (SUCCEEDED(factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ,
+                                                     WICDecodeMetadataCacheOnLoad, &decoder)) &&
+        SUCCEEDED(decoder->GetFrame(0, &frame)) &&
+        SUCCEEDED(factory->CreateFormatConverter(&converter)) &&
+        SUCCEEDED(converter->Initialize(frame, GUID_WICPixelFormat32bppBGRA,
+                                        WICBitmapDitherTypeNone, nullptr, 0.0,
+                                        WICBitmapPaletteTypeCustom))) {
+        UINT width = 0;
+        UINT height = 0;
+        if (SUCCEEDED(converter->GetSize(&width, &height)) && width > 0 && height > 0 &&
+            width <= 20000 && height <= 20000) {
+            const size_t stride = (size_t)width * 4u;
+            std::vector<BYTE> pixels(stride * (size_t)height, 0);
+            if (SUCCEEDED(converter->CopyPixels(nullptr, (UINT)stride, (UINT)pixels.size(),
+                                                pixels.data()))) {
+                for (size_t i = 3; i < pixels.size(); i += 4) {
+                    if (pixels[i] != 255) {
+                        hasAlpha = true;
+                        break;
+                    }
+                }
+                result = bitmapFromPixels(pixels.data(), (int)width, (int)height);
+            }
+        }
+    }
+
+    if (converter) converter->Release();
+    if (frame) frame->Release();
+    if (decoder) decoder->Release();
+    factory->Release();
+    return result;
 }
 
 // Stretches 32bpp top-down pixels down to targetWidth x targetHeight. Two DIB sections are
@@ -259,11 +312,46 @@ bool downscaledPixels(HBITMAP source, bool keepAlpha, int& width, int& height,
     const int smallWidth = (int)(width * factor + 0.5f);
     const int smallHeight = (int)(height * factor + 0.5f);
 
-    std::vector<BYTE> small;
-    if (!shrinkPixels(storage.data(), width, height, smallWidth, smallHeight, small)) return false;
-    storage.swap(small);
+    std::vector<BYTE> scaled;
+    if (!shrinkPixels(storage.data(), width, height, smallWidth, smallHeight, scaled)) return false;
+    storage.swap(scaled);
     width = smallWidth;
     height = smallHeight;
+    return true;
+}
+
+// Shared tail of both publish paths: downscale to the cap, encode the PNG, hand it to the
+// server and build the thumbnail. 'bitmap' stays owned by the caller.
+bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, int linkWidth,
+                  int linkHeight, int sourceWidth, int sourceHeight, PicturePreview& preview);
+
+bool publishBitmap(HBITMAP bitmap, bool keepAlpha, std::wstring& url, PicturePreview& preview) {
+    int sourceWidth = 0;
+    int sourceHeight = 0;
+    BITMAP description = {};
+    if (GetObjectW(bitmap, sizeof(description), &description)) {
+        sourceWidth = description.bmWidth;
+        sourceHeight = description.bmHeight;
+    }
+
+    int width = 0;
+    int height = 0;
+    std::vector<BYTE> storage;
+    if (!downscaledPixels(bitmap, keepAlpha, width, height, storage)) return false;
+
+    std::string png;
+    if (!net::encodePixelsAsPng(storage.data(), width, height, png)) return false;
+
+    bool published = false;
+    const std::wstring path = net::publish(png.data(), png.size(), net::Kind::Png, published);
+    if (!published) return false;
+
+    // The thumbnail is best effort: a link without a preview still works.
+    buildPreview(storage, width, height, width, height, sourceWidth, sourceHeight, preview);
+
+    // Same path as the PNG: keep the token, drop the ".png" so the QR code opens the page.
+    const size_t tokenLength = path.size() > 4 ? path.size() - 4 : path.size();
+    url = net::pageUrl(path.substr(0, tokenLength));
     return true;
 }
 
@@ -282,12 +370,12 @@ bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, int li
     if (targetWidth < 1) targetWidth = 1;
     if (targetHeight < 1) targetHeight = 1;
 
-    std::vector<BYTE> small;
+    std::vector<BYTE> scaled;
     const BYTE* source = pixels.data();
     if (targetWidth != width || targetHeight != height) {
-        if (!shrinkPixels(pixels.data(), width, height, targetWidth, targetHeight, small))
+        if (!shrinkPixels(pixels.data(), width, height, targetWidth, targetHeight, scaled))
             return false;
-        source = small.data();
+        source = scaled.data();
     }
 
     HBITMAP bitmap = bitmapFromPixels(source, targetWidth, targetHeight);
@@ -333,33 +421,24 @@ bool publishClipboardPicture(std::wstring& url, PicturePreview& preview) {
     if (!bitmap) {
         return false;
     }
+    const bool published = publishBitmap(bitmap, hasAlpha, url, preview);
+    DeleteObject(bitmap);
+    return published;
+}
 
-    int sourceWidth = 0;
-    int sourceHeight = 0;
-    BITMAP description = {};
-    if (GetObjectW(bitmap, sizeof(description), &description)) {
-        sourceWidth = description.bmWidth;
-        sourceHeight = description.bmHeight;
+bool publishFilePicture(const std::wstring& path, std::wstring& url, PicturePreview& preview) {
+    url.clear();
+    releasePicturePreview(preview);
+    if (!net::running()) {
+        return false;
     }
 
-    int width = 0;
-    int height = 0;
-    std::vector<BYTE> storage;
-    const bool scaled = downscaledPixels(bitmap, hasAlpha, width, height, storage);
+    bool hasAlpha = false;
+    HBITMAP bitmap = bitmapFromFile(path, hasAlpha);
+    if (!bitmap) {
+        return false;
+    }
+    const bool published = publishBitmap(bitmap, hasAlpha, url, preview);
     DeleteObject(bitmap);
-
-    std::string png;
-    if (!scaled || !net::encodePixelsAsPng(storage.data(), width, height, png)) return false;
-
-    bool published = false;
-    const std::wstring path = net::publish(png.data(), png.size(), net::Kind::Png, published);
-    if (!published) return false;
-
-    // The thumbnail is best effort: a link without a preview still works.
-    buildPreview(storage, width, height, width, height, sourceWidth, sourceHeight, preview);
-
-    // Same path as the PNG: keep the token, drop the ".png" so the QR code opens the page.
-    const size_t tokenLength = path.size() > 4 ? path.size() - 4 : path.size();
-    url = net::pageUrl(path.substr(0, tokenLength));
-    return true;
+    return published;
 }

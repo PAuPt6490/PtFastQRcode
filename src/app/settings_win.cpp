@@ -44,6 +44,8 @@ constexpr int IDC_MODE_SYSTEM = 3071;
 constexpr int IDC_MODE_LIGHT = 3072;
 constexpr int IDC_MODE_DARK = 3073;
 
+constexpr int IDC_LINK_EDIT = 3081;
+
 constexpr int IDC_BTN_SAVE_RESTART = 3065;
 
 constexpr int IDC_BTN_DEFAULTS = 3061;
@@ -94,6 +96,8 @@ struct Rect2 {
     RECT btnBrowse;
     RECT style[2];
     RECT mode[3];
+    RECT linkField;
+    RECT linkEdit;
     RECT btnDefaults;
     RECT btnCancel;
     RECT btnSave;
@@ -113,6 +117,7 @@ struct SettingsState {
     HWND btnBrowse = nullptr;
     HWND styleChips[2] = {};
     HWND modeChips[3] = {};
+    HWND linkEdit = nullptr;
     HWND btnDefaults = nullptr;
     HWND btnCancel = nullptr;
     HWND btnSave = nullptr;
@@ -124,6 +129,7 @@ struct SettingsState {
     int style = 1;
     int mode = 1;  // 1 = follow system, 2 = light, 3 = dark
     int qrSize = 360;
+    int linkMinutes = 5;
     UINT mods = MOD_CONTROL | MOD_ALT;
     UINT vk = 'Q';
     std::wstring dir;
@@ -358,6 +364,8 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
     g_settings.qrSize = size;
     g_settings.saveDir = directory;
     g_settings.imageServer = st->toggleValues[4];
+    g_settings.linkMinutes = st->linkMinutes;
+    net::setLifetime(g_settings.linkMinutes);
     ensureDirectory(g_settings.saveDir);
     saveSettings();
     applyAutostart(st->toggleValues[3]);
@@ -410,7 +418,7 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
         };
         if (!nativeFrame) line(S(48));
         if (!nativeFrame) line(S(128));
-        line(S(512));
+        line(S(572));
         line(clientHeight - S(64));
         SelectObject(hdc, previous);
         DeleteObject(pen);
@@ -429,35 +437,40 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
     label(L"行为", 16, 134, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     const wchar_t* toggleLabels[5] = {L"点击窗口外自动关闭", L"打开时自动粘贴剪贴板",
                                       L"保存后关闭窗口", L"开机自启动",
-                                      L"图片链接(局域网,5 分钟内有效)"};
+                                      L"图片链接(局域网)"};
     for (int i = 0; i < 5; ++i) {
         int y = 154 + i * 36;
         label(toggleLabels[i], 16, y, 420, 26, g_fonts.body, g_theme.text,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 
-    label(L"二维码", 16, 326, 200, 20, g_fonts.bold, g_theme.text,
+    label(L"链接有效期", 16, 326, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"纠错级别", 16, 348, 200, 18, g_fonts.hint, g_theme.textDim,
-          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"图片尺寸", 16, 402, 120, 18, g_fonts.hint, g_theme.textDim,
-          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"像素,范围 160 - 1200", 186, 424, 250, 30, g_fonts.hint, g_theme.textDim,
-          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"保存目录", 16, 460, 120, 18, g_fonts.hint, g_theme.textDim,
+    label(L"分钟,范围 1 - 120", 130, 344, 250, 30, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    label(L"界面风格", 16, 518, 200, 18, g_fonts.hint, g_theme.textDim,
+    label(L"二维码", 16, 386, 200, 20, g_fonts.bold, g_theme.text,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"颜色模式", 16, 576, 200, 18, g_fonts.hint, g_theme.textDim,
+    label(L"纠错级别", 16, 408, 200, 18, g_fonts.hint, g_theme.textDim,
+          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"图片尺寸", 16, 462, 120, 18, g_fonts.hint, g_theme.textDim,
+          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"像素,范围 160 - 1200", 186, 484, 250, 30, g_fonts.hint, g_theme.textDim,
+          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"保存目录", 16, 520, 120, 18, g_fonts.hint, g_theme.textDim,
+          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+    label(L"界面风格", 16, 578, 200, 18, g_fonts.hint, g_theme.textDim,
+          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"颜色模式", 16, 636, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     // Width is in design units (label() scales it); clientWidth is already physical.
     label(L"Win32 走系统主题引擎(固定浅色);WinUI 3 用系统主色与官方图标字体;点“保存并重启”立即生效。",
-          16, 630, 470, 18, g_fonts.hint, g_theme.textDim,
+          16, 690, 470, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     {
         // clientWidth is already in physical pixels, so draw it directly instead of via label().
-        RECT versionRect = {clientWidth - S(160), S(630), clientWidth - S(16), S(648)};
+        RECT versionRect = {clientWidth - S(160), S(690), clientWidth - S(16), S(708)};
         std::wstring version = std::wstring(L"v") + kAppVersion;
         drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, version.c_str(), versionRect,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
@@ -465,6 +478,7 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
 
     // Field frames: themed by the OS in classic mode, Fluent surfaces otherwise.
     paintFieldFrame(hwnd, hdc, st->rects.sizeField, g_theme.radius);
+    paintFieldFrame(hwnd, hdc, st->rects.linkField, g_theme.radius);
     paintFieldFrame(hwnd, hdc, st->rects.dirField, g_theme.radius);
 }
 
@@ -490,34 +504,37 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
         r.toggles[i] = {clientWidth - S(60), y, clientWidth - S(16), y + S(26)};
     }
 
+    r.linkField = {S(16), S(344), S(96), S(374)};
+    r.linkEdit = {S(23), S(349), S(90), S(370)};
+
     for (int i = 0; i < 4; ++i) {
         int x = S(16 + i * 88);
-        r.ecc[i] = {x, S(368), x + S(80), S(398)};
+        r.ecc[i] = {x, S(428), x + S(80), S(458)};
     }
 
-    r.sizeField = {S(16), S(424), S(96), S(454)};
-    r.sizeEdit = {S(23), S(429), S(90), S(450)};
-    r.sizeMinus = {S(104), S(424), S(138), S(454)};
-    r.sizePlus = {S(142), S(424), S(176), S(454)};
+    r.sizeField = {S(16), S(484), S(96), S(514)};
+    r.sizeEdit = {S(23), S(489), S(90), S(510)};
+    r.sizeMinus = {S(104), S(484), S(138), S(514)};
+    r.sizePlus = {S(142), S(484), S(176), S(514)};
 
-    r.dirField = {S(16), S(480), clientWidth - S(108), S(510)};
-    r.dirEdit = {S(25), S(486), clientWidth - S(118), S(506)};
-    r.btnBrowse = {clientWidth - S(100), S(480), clientWidth - S(16), S(510)};
+    r.dirField = {S(16), S(540), clientWidth - S(108), S(570)};
+    r.dirEdit = {S(25), S(546), clientWidth - S(118), S(566)};
+    r.btnBrowse = {clientWidth - S(100), S(540), clientWidth - S(16), S(570)};
 
     for (int i = 0; i < 2; ++i) {
         int x = S(16 + i * 128);
-        r.style[i] = {x, S(538), x + S(120), S(568)};
+        r.style[i] = {x, S(598), x + S(120), S(628)};
     }
     for (int i = 0; i < 3; ++i) {
         int x = S(16 + i * 108);
-        r.mode[i] = {x, S(594), x + S(100), S(624)};
+        r.mode[i] = {x, S(654), x + S(100), S(684)};
     }
 
-    r.btnDefaults = {S(16), S(672) + extraHeight, S(116), S(708) + extraHeight};
-    r.btnCancel = {S(220), S(672) + extraHeight, S(308), S(708) + extraHeight};
-    r.btnSave = {S(316), S(672) + extraHeight, S(404), S(708) + extraHeight};
-    r.btnSaveRestart = {clientWidth - S(148), S(672) + extraHeight, clientWidth - S(16),
-                        S(708) + extraHeight};
+    r.btnDefaults = {S(16), S(732) + extraHeight, S(116), S(768) + extraHeight};
+    r.btnCancel = {S(220), S(732) + extraHeight, S(308), S(768) + extraHeight};
+    r.btnSave = {S(316), S(732) + extraHeight, S(404), S(768) + extraHeight};
+    r.btnSaveRestart = {clientWidth - S(148), S(732) + extraHeight, clientWidth - S(16),
+                        S(768) + extraHeight};
     r.btnClose = {clientWidth - S(46), S(10), clientWidth - S(16), S(40)};
 
     // With a real caption bar our own title strip is gone, so the content moves up.
@@ -532,6 +549,8 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
         for (auto& rect : r.ecc) OffsetRect(&rect, 0, dy);
         for (auto& rect : r.style) OffsetRect(&rect, 0, dy);
         for (auto& rect : r.mode) OffsetRect(&rect, 0, dy);
+        OffsetRect(&r.linkField, 0, dy);
+        OffsetRect(&r.linkEdit, 0, dy);
     }
 
     place(st->hotkey, r.hotkey);
@@ -545,6 +564,7 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
     place(st->btnBrowse, r.btnBrowse);
     for (int i = 0; i < 2; ++i) place(st->styleChips[i], r.style[i]);
     for (int i = 0; i < 3; ++i) place(st->modeChips[i], r.mode[i]);
+    place(st->linkEdit, r.linkEdit);
     place(st->btnDefaults, r.btnDefaults);
     place(st->btnCancel, r.btnCancel);
     place(st->btnSave, r.btnSave);
@@ -610,10 +630,21 @@ void createChildControls(HWND hwnd, SettingsState* st) {
                                   nullptr);
     SendMessageW(st->dirEdit, WM_SETFONT, (WPARAM)g_fonts.body, TRUE);
 
+    st->linkEdit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER |
+                                                        ES_CENTER | ES_AUTOHSCROLL,
+                                   0, 0, 10, 10, hwnd, (HMENU)(INT_PTR)IDC_LINK_EDIT, g_hinst,
+                                   nullptr);
+    SendMessageW(st->linkEdit, WM_SETFONT, (WPARAM)g_fonts.body, TRUE);
+    SendMessageW(st->linkEdit, EM_SETLIMITTEXT, 3, 0);
+
     wchar_t sizeText[16] = {0};
     wsprintfW(sizeText, L"%d", st->qrSize);
     SetWindowTextW(st->sizeEdit, sizeText);
     SetWindowTextW(st->dirEdit, st->dir.c_str());
+
+    wchar_t linkText[8] = {0};
+    wsprintfW(linkText, L"%d", st->linkMinutes);
+    SetWindowTextW(st->linkEdit, linkText);
 }
 
 void loadValues(HWND hwnd, SettingsState* st) {
@@ -631,12 +662,17 @@ void loadValues(HWND hwnd, SettingsState* st) {
     st->style = themeStyle(g_settings.theme);
     st->mode = g_settings.theme == 0 ? 0 : g_settings.theme;
     st->qrSize = g_settings.qrSize;
+    st->linkMinutes = g_settings.linkMinutes;
     st->dir = g_settings.saveDir;
     syncModeAvailability(st);
 
     for (int i = 0; i < 5; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
     for (int i = 0; i < 4; ++i) InvalidateRect(st->eccChips[i], nullptr, FALSE);
     for (int i = 0; i < 2; ++i) InvalidateRect(st->styleChips[i], nullptr, FALSE);
+
+    wchar_t linkText[8] = {0};
+    wsprintfW(linkText, L"%d", st->linkMinutes);
+    SetWindowTextW(st->linkEdit, linkText);
     InvalidateRect(st->hotkey, nullptr, FALSE);
     (void)hwnd;
 }
@@ -650,6 +686,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
             st->ecc = g_settings.eccLevel;
             st->style = themeStyle(g_settings.theme);
             st->qrSize = g_settings.qrSize;
+            st->linkMinutes = g_settings.linkMinutes;
             st->dir = g_settings.saveDir;
             st->mods = g_settings.hotkeyMods;
             st->vk = g_settings.hotkeyVk;
@@ -774,6 +811,14 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                 return 0;
             }
 
+            if (id == IDC_LINK_EDIT && notification == EN_CHANGE) {
+                wchar_t text[8] = {0};
+                GetWindowTextW(st->linkEdit, text, ARRAYSIZE(text));
+                int value = tu::toInt(text);
+                if (value >= 1 && value <= 120) st->linkMinutes = value;
+                return 0;
+            }
+
             const int eccIds[4] = {IDC_ECC_L, IDC_ECC_M, IDC_ECC_Q, IDC_ECC_H};
             const int styleIds[2] = {IDC_STYLE_WIN32, IDC_STYLE_WINUI};
             const int modeIds[3] = {IDC_MODE_SYSTEM, IDC_MODE_LIGHT, IDC_MODE_DARK};
@@ -831,12 +876,14 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                     st->style = themeStyle(defaultTheme());
                     st->mode = 1;
                     st->qrSize = 360;
+                    st->linkMinutes = 5;
                     st->dir = defaultSaveDir();
                     g_captureMods = MOD_CONTROL | MOD_ALT;
                     g_captureVk = 'Q';
                     st->mods = g_captureMods;
                     st->vk = g_captureVk;
                     SetWindowTextW(st->sizeEdit, L"360");
+                    SetWindowTextW(st->linkEdit, L"5");
                     SetWindowTextW(st->dirEdit, st->dir.c_str());
                     for (int i = 0; i < 5; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
                     for (int i = 0; i < 4; ++i) InvalidateRect(st->eccChips[i], nullptr, FALSE);
