@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include "net/httpd.h"
 #include "text_util.h"
 
 #include <commctrl.h>
@@ -22,6 +23,7 @@ constexpr int IDC_TOGGLE_BLUR = 3011;
 constexpr int IDC_TOGGLE_AUTOPASTE = 3012;
 constexpr int IDC_TOGGLE_CLOSESAVE = 3013;
 constexpr int IDC_TOGGLE_AUTOSTART = 3014;
+constexpr int IDC_TOGGLE_IMAGES = 3015;
 
 constexpr int IDC_ECC_L = 3021;
 constexpr int IDC_ECC_M = 3022;
@@ -49,8 +51,8 @@ constexpr int IDC_BTN_CANCEL = ID_SETTINGS_CANCEL;
 constexpr int IDC_BTN_SAVE = ID_SETTINGS_SAVE;
 constexpr int IDC_BTN_CLOSE = 3064;
 
-constexpr int kWidth = 560;
-constexpr int kHeight = 688;
+constexpr int kWidth = kSettingsWidth;
+constexpr int kHeight = kSettingsHeight;
 
 const BtnSpec kSpecs[] = {
     {IDC_BTN_RESET_HOTKEY, BtnKind::Secondary, L"重置"},
@@ -58,6 +60,7 @@ const BtnSpec kSpecs[] = {
     {IDC_TOGGLE_AUTOPASTE, BtnKind::Toggle, L""},
     {IDC_TOGGLE_CLOSESAVE, BtnKind::Toggle, L""},
     {IDC_TOGGLE_AUTOSTART, BtnKind::Toggle, L""},
+    {IDC_TOGGLE_IMAGES, BtnKind::Toggle, L""},
     {IDC_ECC_L, BtnKind::Chip, L"低  7%"},
     {IDC_ECC_M, BtnKind::Chip, L"中  15%"},
     {IDC_ECC_Q, BtnKind::Chip, L"高  25%"},
@@ -80,7 +83,7 @@ const BtnSpec kSpecs[] = {
 struct Rect2 {
     RECT hotkey;
     RECT btnResetHotkey;
-    RECT toggles[4];
+    RECT toggles[5];
     RECT ecc[4];
     RECT sizeField;
     RECT sizeEdit;
@@ -101,7 +104,7 @@ struct Rect2 {
 struct SettingsState {
     HWND hotkey = nullptr;
     HWND btnResetHotkey = nullptr;
-    HWND toggles[4] = {};
+    HWND toggles[5] = {};
     HWND eccChips[4] = {};
     HWND sizeEdit = nullptr;
     HWND sizeMinus = nullptr;
@@ -116,7 +119,7 @@ struct SettingsState {
     HWND btnSaveRestart = nullptr;
     HWND btnClose = nullptr;
 
-    bool toggleValues[4] = {true, true, true, false};
+    bool toggleValues[5] = {true, true, true, false, false};
     int ecc = 1;
     int style = 1;
     int mode = 1;  // 1 = follow system, 2 = light, 3 = dark
@@ -354,9 +357,15 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
     g_settings.theme = st->style == 0 ? 0 : st->mode;
     g_settings.qrSize = size;
     g_settings.saveDir = directory;
+    g_settings.imageServer = st->toggleValues[4];
     ensureDirectory(g_settings.saveDir);
     saveSettings();
     applyAutostart(st->toggleValues[3]);
+
+    // The listening socket can be opened or closed on the spot, so a save without the
+    // restart button still makes the picture link work immediately.
+    if (g_settings.imageServer && !net::running()) net::start(g_controller);
+    if (!g_settings.imageServer && net::running()) net::stop();
 
     int style = st->style;
     HWND popup = g_popup;
@@ -399,8 +408,7 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
         };
         if (!nativeFrame) line(S(48));
         if (!nativeFrame) line(S(128));
-        line(S(284));
-        line(S(476));
+        line(S(512));
         line(clientHeight - S(64));
         SelectObject(hdc, previous);
         DeleteObject(pen);
@@ -417,35 +425,37 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
           g_theme.textDim, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     label(L"行为", 16, 134, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    const wchar_t* toggleLabels[4] = {L"点击窗口外自动关闭", L"打开时自动粘贴剪贴板",
-                                      L"保存后关闭窗口", L"开机自启动"};
-    for (int i = 0; i < 4; ++i) {
+    const wchar_t* toggleLabels[5] = {L"点击窗口外自动关闭", L"打开时自动粘贴剪贴板",
+                                      L"保存后关闭窗口", L"开机自启动",
+                                      L"图片链接(局域网,5 分钟内有效)"};
+    for (int i = 0; i < 5; ++i) {
         int y = 154 + i * 36;
         label(toggleLabels[i], 16, y, 420, 26, g_fonts.body, g_theme.text,
               DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 
-    label(L"二维码", 16, 290, 200, 20, g_fonts.bold, g_theme.text, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"纠错级别", 16, 312, 200, 18, g_fonts.hint, g_theme.textDim,
+    label(L"二维码", 16, 326, 200, 20, g_fonts.bold, g_theme.text,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"图片尺寸", 16, 366, 120, 18, g_fonts.hint, g_theme.textDim,
+    label(L"纠错级别", 16, 348, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"像素,范围 160 - 1200", 186, 388, 250, 30, g_fonts.hint, g_theme.textDim,
+    label(L"图片尺寸", 16, 402, 120, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"保存目录", 16, 424, 120, 18, g_fonts.hint, g_theme.textDim,
+    label(L"像素,范围 160 - 1200", 186, 424, 250, 30, g_fonts.hint, g_theme.textDim,
+          DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    label(L"保存目录", 16, 460, 120, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-    label(L"界面风格", 16, 482, 200, 18, g_fonts.hint, g_theme.textDim,
+    label(L"界面风格", 16, 518, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"颜色模式", 16, 540, 200, 18, g_fonts.hint, g_theme.textDim,
+    label(L"颜色模式", 16, 576, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     // Width is in design units (label() scales it); clientWidth is already physical.
     label(L"Win32 走系统主题引擎(固定浅色);WinUI 3 用系统主色与官方图标字体;点“保存并重启”立即生效。",
-          16, 594, 470, 18, g_fonts.hint, g_theme.textDim,
+          16, 630, 470, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     {
         // clientWidth is already in physical pixels, so draw it directly instead of via label().
-        RECT versionRect = {clientWidth - S(160), S(594), clientWidth - S(16), S(612)};
+        RECT versionRect = {clientWidth - S(160), S(630), clientWidth - S(16), S(648)};
         std::wstring version = std::wstring(L"v") + kAppVersion;
         drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, version.c_str(), versionRect,
                     DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
@@ -473,39 +483,39 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
     r.hotkey = {S(16), S(74), S(256), S(108)};
     r.btnResetHotkey = {S(264), S(74), S(340), S(108)};
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 5; ++i) {
         int y = S(154 + i * 36);
         r.toggles[i] = {clientWidth - S(60), y, clientWidth - S(16), y + S(26)};
     }
 
     for (int i = 0; i < 4; ++i) {
         int x = S(16 + i * 88);
-        r.ecc[i] = {x, S(332), x + S(80), S(362)};
+        r.ecc[i] = {x, S(368), x + S(80), S(398)};
     }
 
-    r.sizeField = {S(16), S(388), S(96), S(418)};
-    r.sizeEdit = {S(23), S(393), S(90), S(414)};
-    r.sizeMinus = {S(104), S(388), S(138), S(418)};
-    r.sizePlus = {S(142), S(388), S(176), S(418)};
+    r.sizeField = {S(16), S(424), S(96), S(454)};
+    r.sizeEdit = {S(23), S(429), S(90), S(450)};
+    r.sizeMinus = {S(104), S(424), S(138), S(454)};
+    r.sizePlus = {S(142), S(424), S(176), S(454)};
 
-    r.dirField = {S(16), S(444), clientWidth - S(108), S(474)};
-    r.dirEdit = {S(25), S(450), clientWidth - S(118), S(470)};
-    r.btnBrowse = {clientWidth - S(100), S(444), clientWidth - S(16), S(474)};
+    r.dirField = {S(16), S(480), clientWidth - S(108), S(510)};
+    r.dirEdit = {S(25), S(486), clientWidth - S(118), S(506)};
+    r.btnBrowse = {clientWidth - S(100), S(480), clientWidth - S(16), S(510)};
 
     for (int i = 0; i < 2; ++i) {
         int x = S(16 + i * 128);
-        r.style[i] = {x, S(502), x + S(120), S(532)};
+        r.style[i] = {x, S(538), x + S(120), S(568)};
     }
     for (int i = 0; i < 3; ++i) {
         int x = S(16 + i * 108);
-        r.mode[i] = {x, S(558), x + S(100), S(588)};
+        r.mode[i] = {x, S(594), x + S(100), S(624)};
     }
 
-    r.btnDefaults = {S(16), S(636) + extraHeight, S(116), S(672) + extraHeight};
-    r.btnCancel = {S(220), S(636) + extraHeight, S(308), S(672) + extraHeight};
-    r.btnSave = {S(316), S(636) + extraHeight, S(404), S(672) + extraHeight};
-    r.btnSaveRestart = {clientWidth - S(148), S(636) + extraHeight, clientWidth - S(16),
-                        S(672) + extraHeight};
+    r.btnDefaults = {S(16), S(672) + extraHeight, S(116), S(708) + extraHeight};
+    r.btnCancel = {S(220), S(672) + extraHeight, S(308), S(708) + extraHeight};
+    r.btnSave = {S(316), S(672) + extraHeight, S(404), S(708) + extraHeight};
+    r.btnSaveRestart = {clientWidth - S(148), S(672) + extraHeight, clientWidth - S(16),
+                        S(708) + extraHeight};
     r.btnClose = {clientWidth - S(46), S(10), clientWidth - S(16), S(40)};
 
     // With a real caption bar our own title strip is gone, so the content moves up.
@@ -524,7 +534,7 @@ void layoutSettings(HWND hwnd, SettingsState* st) {
 
     place(st->hotkey, r.hotkey);
     place(st->btnResetHotkey, r.btnResetHotkey);
-    for (int i = 0; i < 4; ++i) place(st->toggles[i], r.toggles[i]);
+    for (int i = 0; i < 5; ++i) place(st->toggles[i], r.toggles[i]);
     for (int i = 0; i < 4; ++i) place(st->eccChips[i], r.ecc[i]);
     place(st->sizeEdit, r.sizeEdit);
     place(st->sizeMinus, r.sizeMinus);
@@ -556,6 +566,7 @@ void createChildControls(HWND hwnd, SettingsState* st) {
         {&st->toggles[1], IDC_TOGGLE_AUTOPASTE, L""},
         {&st->toggles[2], IDC_TOGGLE_CLOSESAVE, L""},
         {&st->toggles[3], IDC_TOGGLE_AUTOSTART, L""},
+        {&st->toggles[4], IDC_TOGGLE_IMAGES, L""},
         {&st->eccChips[0], IDC_ECC_L, L"低  7%"},
         {&st->eccChips[1], IDC_ECC_M, L"中  15%"},
         {&st->eccChips[2], IDC_ECC_Q, L"高  25%"},
@@ -613,6 +624,7 @@ void loadValues(HWND hwnd, SettingsState* st) {
     st->toggleValues[1] = g_settings.autoPaste;
     st->toggleValues[2] = g_settings.closeAfterSave;
     st->toggleValues[3] = g_settings.autostart;
+    st->toggleValues[4] = g_settings.imageServer;
     st->ecc = g_settings.eccLevel;
     st->style = themeStyle(g_settings.theme);
     st->mode = g_settings.theme == 0 ? 0 : g_settings.theme;
@@ -620,7 +632,7 @@ void loadValues(HWND hwnd, SettingsState* st) {
     st->dir = g_settings.saveDir;
     syncModeAvailability(st);
 
-    for (int i = 0; i < 4; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
+    for (int i = 0; i < 5; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
     for (int i = 0; i < 4; ++i) InvalidateRect(st->eccChips[i], nullptr, FALSE);
     for (int i = 0; i < 2; ++i) InvalidateRect(st->styleChips[i], nullptr, FALSE);
     InvalidateRect(st->hotkey, nullptr, FALSE);
@@ -697,6 +709,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                     case IDC_TOGGLE_AUTOPASTE: checkedState = st->toggleValues[1]; break;
                     case IDC_TOGGLE_CLOSESAVE: checkedState = st->toggleValues[2]; break;
                     case IDC_TOGGLE_AUTOSTART: checkedState = st->toggleValues[3]; break;
+                    case IDC_TOGGLE_IMAGES: checkedState = st->toggleValues[4]; break;
                     case IDC_ECC_L: checkedState = st->ecc == 0; break;
                     case IDC_ECC_M: checkedState = st->ecc == 1; break;
                     case IDC_ECC_Q: checkedState = st->ecc == 2; break;
@@ -786,6 +799,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                 case IDC_TOGGLE_AUTOPASTE: setToggle(st, 1, !st->toggleValues[1]); return 0;
                 case IDC_TOGGLE_CLOSESAVE: setToggle(st, 2, !st->toggleValues[2]); return 0;
                 case IDC_TOGGLE_AUTOSTART: setToggle(st, 3, !st->toggleValues[3]); return 0;
+                case IDC_TOGGLE_IMAGES: setToggle(st, 4, !st->toggleValues[4]); return 0;
                 case IDC_BTN_RESET_HOTKEY:
                     g_captureMods = MOD_CONTROL | MOD_ALT;
                     g_captureVk = 'Q';
@@ -822,7 +836,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                     st->vk = g_captureVk;
                     SetWindowTextW(st->sizeEdit, L"360");
                     SetWindowTextW(st->dirEdit, st->dir.c_str());
-                    for (int i = 0; i < 4; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
+                    for (int i = 0; i < 5; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
                     for (int i = 0; i < 4; ++i) InvalidateRect(st->eccChips[i], nullptr, FALSE);
                     for (int i = 0; i < 2; ++i) InvalidateRect(st->styleChips[i], nullptr, FALSE);
                     for (int i = 0; i < 3; ++i) InvalidateRect(st->modeChips[i], nullptr, FALSE);

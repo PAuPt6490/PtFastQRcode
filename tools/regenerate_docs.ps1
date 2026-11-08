@@ -1,7 +1,7 @@
 # Regenerates docs screenshots with the renamed app (PtFastQRcode).
 # Windows are captured with PrintWindow, so overlapping windows do not pollute the shots.
 $ErrorActionPreference = 'Stop'
-$root = Split-Path -Parent $PSScriptRoot   # 仓库根目录,脚本放在 tools\ 下
+$root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
 Add-Type -Namespace Shot -Name Api -MemberDefinition @'
@@ -85,7 +85,22 @@ function Start-App([string]$arguments) {
 }
 
 $previous = Get-ItemProperty 'HKCU:\Software\PtFastQRcode'
-Set-Clipboard -Value 'https://github.com/PAuPt6490/PtFastQRcode'
+
+# The clipboard is sometimes held by another process (VirtualBox clipboard sharing,
+# an Explorer window, ...), so retry before giving up.
+function Set-DocsClipboard([string]$text) {
+    for ($i = 0; $i -lt 12; $i++) {
+        try {
+            Set-Clipboard -Value $text
+            return
+        } catch {
+            Start-Sleep -Milliseconds 300
+        }
+    }
+    throw 'clipboard is locked by another process'
+}
+
+Set-DocsClipboard 'https://github.com/PAuPt6490/PtFastQRcode'
 
 # 1. 默认外观(WinUI 3 + 跟随系统)
 Stop-App; Set-Theme 1; Start-App '--show'

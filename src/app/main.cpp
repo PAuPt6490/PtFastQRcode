@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "net/httpd.h"
+
 #include <commdlg.h>   // types only: comdlg32 is resolved at run time
 
 #include "text_util.h"
@@ -208,6 +210,10 @@ LRESULT CALLBACK ControllerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
             showPopup();
             return 0;
 
+        case WM_APP_HTTP:
+            net::handleEvent(wParam, lParam);
+            return 0;
+
         case WM_APP_TRAY: {
             // NOTIFYICON_VERSION_4 packs the icon id in the high word: LOWORD is the event.
             UINT event = LOWORD(lParam);
@@ -248,6 +254,7 @@ LRESULT CALLBACK ControllerProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
             return 0;
 
         case WM_DESTROY:
+            net::stop();
             removeTrayIcon();
             if (g_trayIcon) {
                 DestroyIcon(g_trayIcon);
@@ -305,8 +312,8 @@ void computeScale() {
         workWidth = (float)GetSystemMetrics(SM_CXSCREEN);
         workHeight = (float)GetSystemMetrics(SM_CYSCREEN);
     }
-    float fitWidth = 0.88f * workWidth / 560.0f;
-    float fitHeight = 0.88f * workHeight / 688.0f;
+    float fitWidth = 0.88f * workWidth / (float)kSettingsWidth;
+    float fitHeight = 0.88f * workHeight / (float)kSettingsHeight;
     g_scale = std::min(dpiScale, std::min(fitWidth, fitHeight));
     if (g_scale < 0.8f) g_scale = 0.8f;
     if (g_scale > 2.0f) g_scale = 2.0f;
@@ -574,6 +581,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR commandLine, int showCo
 
     addTrayIcon();
     buildAccelerators();
+    // The LAN server only opens a socket when the option is on, so a plain tray start
+    // never touches the network stack.
+    if (g_settings.imageServer) net::start(g_controller);
 
     if (!registerAppHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk)) {
         std::wstring message = L"快捷键 " + formatHotkey(g_settings.hotkeyMods, g_settings.hotkeyVk) +

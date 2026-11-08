@@ -19,10 +19,15 @@ extern const wchar_t* kWndClassPopup;
 extern const wchar_t* kWndClassSettings;
 extern const wchar_t* kWndClassHotkey;
 
+// Design size of the settings window, shared with the scale fit in wWinMain.
+constexpr int kSettingsWidth = 560;
+constexpr int kSettingsHeight = 724;
+
 #define WM_APP_SHOW (WM_APP + 10)
 #define WM_APP_TRAY (WM_APP + 11)
-#define WM_APP_DESTROY (WM_APP + 12)
-#define WM_APP_HOTKEY_CHANGED (WM_APP + 12)
+#define WM_APP_HIDE (WM_APP + 12)          // hide the popup from the event loop
+#define WM_APP_HOTKEY_CHANGED (WM_APP + 12)  // hotkey control -> settings window
+#define WM_APP_QR (WM_APP + 13)            // worker thread finished encoding
 
 // Control ids that the message loop needs for its accelerator tables.
 #define ID_POPUP_SAVE 2002
@@ -63,6 +68,7 @@ struct Settings {
     int theme;      // 0 = Win32 classic, 1 = follow system, 2 = WinUI 3 light, 3 = WinUI 3 dark
     int popupWidth;   // remembered popup size in design pixels
     int popupHeight;
+    bool imageServer;  // paste a picture -> serve it to phones over the LAN as a link QR
     std::wstring saveDir;
 };
 
@@ -179,6 +185,14 @@ bool saveQrPng(const qr::Symbol& symbol, int pixelSize, const std::wstring& path
 bool copyQrToClipboard(HWND owner, const qr::Symbol& symbol, int pixelSize);
 
 std::wstring defaultFileNameFor(const std::wstring& content);
+
+// ------------------------------------------------------------- picture link
+
+// Copies whatever bitmap the clipboard holds into a PNG of at most kPictureMaxPixels
+// pixels and hands it to the LAN server. Returns false when the clipboard holds no picture.
+bool clipboardHasPicture();
+bool publishClipboardPicture(std::wstring& url);
+constexpr int kPictureMaxPixels = 720;
 
 // ------------------------------------------------------------------- hotkey
 

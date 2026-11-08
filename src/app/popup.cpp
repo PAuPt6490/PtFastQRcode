@@ -398,9 +398,40 @@ void copyImage(HWND hwnd) {
     setStatus(hwnd, st, copied ? L"二维码图片已复制到剪贴板" : L"复制失败,剪贴板被占用", !copied);
 }
 
+// A picture cannot ride in a QR code, so with the LAN server on it becomes a link that the
+// phone can open; the picture itself lives in memory on the server for five minutes.
+bool tryPublishPicture(HWND hwnd) {
+    PopupState* st = getState(hwnd);
+    if (!st || !clipboardHasPicture()) return false;
+
+    st->hasSymbol = false;
+    st->error.clear();
+
+    if (!g_settings.imageServer) {
+        SetWindowTextW(st->edit, L"");
+        setStatus(hwnd, st, L"图片需要先在设置里打开「图片链接」", true);
+        InvalidateRect(hwnd, &st->layout.card, FALSE);
+        return true;
+    }
+
+    std::wstring url;
+    if (!publishClipboardPicture(url)) {
+        setStatus(hwnd, st, L"图片链接生成失败", true);
+        return true;
+    }
+
+    // The link is the QR content, so it shows up in the field and the symbol is rebuilt
+    // from it: scanning the QR code opens the page that shows the picture.
+    SetWindowTextW(st->edit, url.c_str());
+    refreshQr(hwnd);
+    setStatus(hwnd, st, L"已生成图片链接(5 分钟内有效)", false);
+    return true;
+}
+
 void pasteFromClipboard(HWND hwnd) {
     PopupState* st = getState(hwnd);
     if (!st) return;
+    if (tryPublishPicture(hwnd)) return;
     std::wstring text = getClipboardText();
     if (text.empty()) {
         setStatus(hwnd, st, L"剪贴板中没有文本", true);
@@ -439,7 +470,7 @@ void hideWindow(HWND hwnd) {
         st->suppressDeactivate = true;
     }
     ShowWindow(hwnd, SW_HIDE);
-    PostMessageW(hwnd, WM_APP_DESTROY, 0, 0);
+    PostMessageW(hwnd, WM_APP_HIDE, 0, 0);
 }
 
 LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -649,7 +680,7 @@ LRESULT CALLBACK PopupProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam
             hideWindow(hwnd);
             return 0;
 
-        case WM_APP_DESTROY:
+        case WM_APP_HIDE:
             DestroyWindow(hwnd);
             trimProcessMemory();
             return 0;
@@ -739,6 +770,9 @@ void showPopup() {
             std::wstring current = getEditText(st->edit);
             if (tu::compare(text.c_str(), current.c_str()) != 0)
                 SetWindowTextW(st->edit, text.c_str());
+        } else {
+            tryPublishPicture(g_popup);
+            return;
         }
     }
     SendMessageW(st->edit, EM_SETSEL, 0, -1);

@@ -153,11 +153,12 @@ bool copyQrToClipboard(HWND owner, const qr::Symbol& symbol, int pixelSize) {
     Surface surface;
     if (!createSurface(pixelSize, symbol, surface)) return false;
 
+    // The surface already holds the picture as 32bpp BGRA with alpha set, so the DIB
+    // handed to the clipboard is just a header plus those rows turned bottom-up.
     const int width = surface.width;
     const int height = surface.height;
     const size_t stride = (size_t)width * 4;
 
-    // CF_DIB: header plus bottom-up pixels, 32bpp.
     BITMAPINFOHEADER header = {};
     header.biSize = sizeof(BITMAPINFOHEADER);
     header.biWidth = width;
@@ -184,15 +185,8 @@ bool copyQrToClipboard(HWND owner, const qr::Symbol& symbol, int pixelSize) {
     }
 
     // CF_BITMAP for older consumers.
-    HDC screen = GetDC(nullptr);
-    HBITMAP bitmap = CreateCompatibleBitmap(screen, width, height);
-    HDC memory = CreateCompatibleDC(screen);
-    ReleaseDC(nullptr, screen);
-    if (bitmap && memory) {
-        HGDIOBJ old = SelectObject(memory, bitmap);
-        BitBlt(memory, 0, 0, width, height, surface.dc, 0, 0, SRCCOPY);
-        SelectObject(memory, old);
-    }
+    HBITMAP bitmap = CreateDIBitmap(surface.dc, &header, CBM_INIT, surface.bits,
+                                    reinterpret_cast<const BITMAPINFO*>(&header), DIB_RGB_COLORS);
 
     if (OpenClipboard(owner)) {
         EmptyClipboard();
@@ -206,7 +200,6 @@ bool copyQrToClipboard(HWND owner, const qr::Symbol& symbol, int pixelSize) {
 
     if (dib) GlobalFree(dib);
     if (bitmap) DeleteObject(bitmap);
-    if (memory) DeleteDC(memory);
     return copied;
 }
 

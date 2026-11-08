@@ -30,6 +30,8 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 $sources = @(
     'src\qr\qrcode.cpp',
+    'src\net\httpd.cpp',
+    'src\app\picture.cpp',
     'src\app\core.cpp',
     'src\app\ui.cpp',
     'src\app\qrimage.cpp',
@@ -80,7 +82,7 @@ $linkArgs = @(
 ) + $LibFlags + $objects + @($resPath) + @(
     'kernel32.lib', 'user32.lib', 'gdi32.lib', 'shell32.lib',
     'ole32.lib', 'comctl32.lib', 'uuid.lib', 'advapi32.lib', 'uxtheme.lib',
-    'windowscodecs.lib'
+    'windowscodecs.lib', 'ws2_32.lib'
 )
 
 & $LinkExe @linkArgs
