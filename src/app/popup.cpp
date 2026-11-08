@@ -126,15 +126,6 @@ std::wstring defaultStatusText() {
                                   : L"点击窗口外不关闭  ·  Esc 退出";
 }
 
-std::wstring pixelSizeText(int width, int height) {
-    if (width <= 0 || height <= 0) return std::wstring();
-    wchar_t left[16];
-    wchar_t right[16];
-    tu::formatUnsigned(left, 16, (unsigned long)width);
-    tu::formatUnsigned(right, 16, (unsigned long)height);
-    return std::wstring(left) + L"×" + right;
-}
-
 // Runs a copy of this executable that shows one dialog and writes the chosen path to a
 // temp file, then returns that path. Shared by the save dialog and the picture picker.
 bool runPickerChild(const std::wstring& commandLine, std::vector<wchar_t>& resultPath,
@@ -357,10 +348,10 @@ void refreshQr(HWND hwnd) {
     InvalidateRect(hwnd, &st->layout.card, FALSE);
 }
 
-// The code keeps the middle of the card, so in picture mode the thumbnails goes into the
-// gutter the quiet zone leaves free on the left, with the two sizes that matter below it.
-// Everything is measured off the rectangle drawQrSymbol() works with, so both stay aligned
-// at any window size and the thumbnail can never land on the modules.
+// The code keeps the middle of the card, so in picture mode the thumbnail goes into the
+// gutter the quiet zone leaves free on the left. Everything is measured off the rectangle
+// drawQrSymbol() works with, so both stay aligned at any window size and the picture can
+// never land on the modules.
 void drawPreviewThumb(HDC hdc, const RECT& card, const PopupState* st) {
     const PicturePreview& preview = st->preview;
     if (!preview.bitmap || preview.width <= 0 || preview.height <= 0) return;
@@ -377,9 +368,8 @@ void drawPreviewThumb(HDC hdc, const RECT& card, const PopupState* st) {
     const int drawn = module * modules;
     const int gutter = (cardWidth - drawn) / 2;
 
-    const int captionBlock = S(38);
     const int maxWidth = gutter - S(10);
-    const int maxHeight = cardHeight - captionBlock - S(10);
+    const int maxHeight = cardHeight - S(16);
     if (maxWidth < S(44) || maxHeight < S(36)) return;
 
     float scale = (float)maxWidth / (float)preview.width;
@@ -392,7 +382,7 @@ void drawPreviewThumb(HDC hdc, const RECT& card, const PopupState* st) {
 
     RECT box;
     box.left = card.left + (gutter - thumbWidth) / 2;
-    box.top = card.top + (cardHeight - captionBlock - thumbHeight) / 2;
+    box.top = card.top + (cardHeight - thumbHeight) / 2;
     if (box.top < card.top + S(6)) box.top = card.top + S(6);
     box.right = box.left + thumbWidth;
     box.bottom = box.top + thumbHeight;
@@ -409,20 +399,6 @@ void drawPreviewThumb(HDC hdc, const RECT& card, const PopupState* st) {
         DeleteDC(memory);
     }
     drawRoundRect(hdc, box, S(4), CLR_NONE, g_theme.cardBorder, 1);
-
-    const int captionLeft = card.left + S(4);
-    const int captionRight = card.left + gutter - S(4);
-    if (captionRight - captionLeft < S(30)) return;
-
-    std::wstring source = pixelSizeText(preview.sourceWidth, preview.sourceHeight);
-    RECT first = {captionLeft, box.bottom + S(6), captionRight, box.bottom + S(22)};
-    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, source.c_str(), first,
-                DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
-
-    std::wstring served = L"→ " + pixelSizeText(preview.linkWidth, preview.linkHeight);
-    RECT second = {captionLeft, first.bottom, captionRight, first.bottom + S(16)};
-    drawTextGdi(hdc, g_fonts.hint, g_theme.textDim, served.c_str(), second,
-                DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
 // Paints only the parts that intersect the invalidated rectangle: when a status line
@@ -578,7 +554,7 @@ bool publishPictureSource(HWND hwnd, const std::wstring& filePath, bool fromFile
     std::wstring url;
     // The server is opened here, on the first picture, and closed again by the controller
     // once the links have expired.
-    net::setLifetime(g_settings.linkMinutes);
+    net::setLifetime(g_settings.linkSeconds);
     if (!net::running()) net::start(g_controller);
     if (!net::running()) {
         setStatus(hwnd, st, L"本机没有可用的局域网地址", true);
@@ -601,11 +577,11 @@ bool publishPictureSource(HWND hwnd, const std::wstring& filePath, bool fromFile
     st->pictureMode = true;
     st->pictureUrl = url;
     refreshQr(hwnd);
-    wchar_t minutes[16];
-    tu::formatUnsigned(minutes, 16, (unsigned long)g_settings.linkMinutes);
+    wchar_t seconds[16];
+    tu::formatUnsigned(seconds, 16, (unsigned long)g_settings.linkSeconds);
     std::wstring status = L"已生成图片链接(";
-    status += minutes;
-    status += L" 分钟内有效)";
+    status += seconds;
+    status += L" 秒内有效)";
     setStatus(hwnd, st, status.c_str(), false);
     return true;
 }

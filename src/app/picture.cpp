@@ -322,16 +322,11 @@ bool downscaledPixels(HBITMAP source, bool keepAlpha, int& width, int& height,
 
 // Shared tail of both publish paths: downscale to the cap, encode the PNG, hand it to the
 // server and build the thumbnail. 'bitmap' stays owned by the caller.
-bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, int linkWidth,
-                  int linkHeight, int sourceWidth, int sourceHeight, PicturePreview& preview);
+bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, PicturePreview& preview);
 
 bool publishBitmap(HBITMAP bitmap, bool keepAlpha, std::wstring& url, PicturePreview& preview) {
-    int sourceWidth = 0;
-    int sourceHeight = 0;
     BITMAP description = {};
     if (GetObjectW(bitmap, sizeof(description), &description)) {
-        sourceWidth = description.bmWidth;
-        sourceHeight = description.bmHeight;
     }
 
     int width = 0;
@@ -347,7 +342,7 @@ bool publishBitmap(HBITMAP bitmap, bool keepAlpha, std::wstring& url, PicturePre
     if (!published) return false;
 
     // The thumbnail is best effort: a link without a preview still works.
-    buildPreview(storage, width, height, width, height, sourceWidth, sourceHeight, preview);
+    buildPreview(storage, width, height, preview);
 
     // Same path as the PNG: keep the token, drop the ".png" so the QR code opens the page.
     const size_t tokenLength = path.size() > 4 ? path.size() - 4 : path.size();
@@ -357,8 +352,7 @@ bool publishBitmap(HBITMAP bitmap, bool keepAlpha, std::wstring& url, PicturePre
 
 // Thumbnail of the already downscaled picture: the popup draws it a couple of hundred
 // pixels wide, so keeping the 720 px copy around would only waste memory.
-bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, int linkWidth,
-                  int linkHeight, int sourceWidth, int sourceHeight, PicturePreview& preview) {
+bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, PicturePreview& preview) {
     const int longest = width > height ? width : height;
     int targetWidth = width;
     int targetHeight = height;
@@ -384,10 +378,6 @@ bool buildPreview(const std::vector<BYTE>& pixels, int width, int height, int li
     preview.bitmap = bitmap;
     preview.width = targetWidth;
     preview.height = targetHeight;
-    preview.sourceWidth = sourceWidth;
-    preview.sourceHeight = sourceHeight;
-    preview.linkWidth = linkWidth;
-    preview.linkHeight = linkHeight;
     return true;
 }
 
@@ -403,10 +393,6 @@ void releasePicturePreview(PicturePreview& preview) {
     preview.bitmap = nullptr;
     preview.width = 0;
     preview.height = 0;
-    preview.sourceWidth = 0;
-    preview.sourceHeight = 0;
-    preview.linkWidth = 0;
-    preview.linkHeight = 0;
 }
 
 bool publishClipboardPicture(std::wstring& url, PicturePreview& preview) {

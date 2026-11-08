@@ -129,7 +129,7 @@ struct SettingsState {
     int style = 1;
     int mode = 1;  // 1 = follow system, 2 = light, 3 = dark
     int qrSize = 360;
-    int linkMinutes = 5;
+    int linkSeconds = 120;
     UINT mods = MOD_CONTROL | MOD_ALT;
     UINT vk = 'Q';
     std::wstring dir;
@@ -364,8 +364,8 @@ void saveSettingsFromDialog(HWND hwnd, bool restartAfterSave) {
     g_settings.qrSize = size;
     g_settings.saveDir = directory;
     g_settings.imageServer = st->toggleValues[4];
-    g_settings.linkMinutes = st->linkMinutes;
-    net::setLifetime(g_settings.linkMinutes);
+    g_settings.linkSeconds = st->linkSeconds;
+    net::setLifetime(g_settings.linkSeconds);
     ensureDirectory(g_settings.saveDir);
     saveSettings();
     applyAutostart(st->toggleValues[3]);
@@ -446,7 +446,7 @@ void paintSettings(HWND hwnd, HDC hdc, const RECT& dirty) {
 
     label(L"链接有效期", 16, 326, 200, 18, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    label(L"分钟,范围 1 - 120", 130, 344, 250, 30, g_fonts.hint, g_theme.textDim,
+    label(L"秒,最高 7200", 130, 344, 250, 30, g_fonts.hint, g_theme.textDim,
           DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     label(L"二维码", 16, 386, 200, 20, g_fonts.bold, g_theme.text,
@@ -635,7 +635,7 @@ void createChildControls(HWND hwnd, SettingsState* st) {
                                    0, 0, 10, 10, hwnd, (HMENU)(INT_PTR)IDC_LINK_EDIT, g_hinst,
                                    nullptr);
     SendMessageW(st->linkEdit, WM_SETFONT, (WPARAM)g_fonts.body, TRUE);
-    SendMessageW(st->linkEdit, EM_SETLIMITTEXT, 3, 0);
+    SendMessageW(st->linkEdit, EM_SETLIMITTEXT, 5, 0);
 
     wchar_t sizeText[16] = {0};
     wsprintfW(sizeText, L"%d", st->qrSize);
@@ -643,7 +643,7 @@ void createChildControls(HWND hwnd, SettingsState* st) {
     SetWindowTextW(st->dirEdit, st->dir.c_str());
 
     wchar_t linkText[8] = {0};
-    wsprintfW(linkText, L"%d", st->linkMinutes);
+    wsprintfW(linkText, L"%d", st->linkSeconds);
     SetWindowTextW(st->linkEdit, linkText);
 }
 
@@ -662,7 +662,7 @@ void loadValues(HWND hwnd, SettingsState* st) {
     st->style = themeStyle(g_settings.theme);
     st->mode = g_settings.theme == 0 ? 0 : g_settings.theme;
     st->qrSize = g_settings.qrSize;
-    st->linkMinutes = g_settings.linkMinutes;
+    st->linkSeconds = g_settings.linkSeconds;
     st->dir = g_settings.saveDir;
     syncModeAvailability(st);
 
@@ -671,7 +671,7 @@ void loadValues(HWND hwnd, SettingsState* st) {
     for (int i = 0; i < 2; ++i) InvalidateRect(st->styleChips[i], nullptr, FALSE);
 
     wchar_t linkText[8] = {0};
-    wsprintfW(linkText, L"%d", st->linkMinutes);
+    wsprintfW(linkText, L"%d", st->linkSeconds);
     SetWindowTextW(st->linkEdit, linkText);
     InvalidateRect(st->hotkey, nullptr, FALSE);
     (void)hwnd;
@@ -686,7 +686,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
             st->ecc = g_settings.eccLevel;
             st->style = themeStyle(g_settings.theme);
             st->qrSize = g_settings.qrSize;
-            st->linkMinutes = g_settings.linkMinutes;
+            st->linkSeconds = g_settings.linkSeconds;
             st->dir = g_settings.saveDir;
             st->mods = g_settings.hotkeyMods;
             st->vk = g_settings.hotkeyVk;
@@ -815,7 +815,7 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                 wchar_t text[8] = {0};
                 GetWindowTextW(st->linkEdit, text, ARRAYSIZE(text));
                 int value = tu::toInt(text);
-                if (value >= 1 && value <= 120) st->linkMinutes = value;
+                if (value >= 1 && value <= 7200) st->linkSeconds = value;
                 return 0;
             }
 
@@ -876,14 +876,14 @@ LRESULT CALLBACK SettingsProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
                     st->style = themeStyle(defaultTheme());
                     st->mode = 1;
                     st->qrSize = 360;
-                    st->linkMinutes = 5;
+                    st->linkSeconds = 120;
                     st->dir = defaultSaveDir();
                     g_captureMods = MOD_CONTROL | MOD_ALT;
                     g_captureVk = 'Q';
                     st->mods = g_captureMods;
                     st->vk = g_captureVk;
                     SetWindowTextW(st->sizeEdit, L"360");
-                    SetWindowTextW(st->linkEdit, L"5");
+                    SetWindowTextW(st->linkEdit, L"120");
                     SetWindowTextW(st->dirEdit, st->dir.c_str());
                     for (int i = 0; i < 5; ++i) InvalidateRect(st->toggles[i], nullptr, FALSE);
                     for (int i = 0; i < 4; ++i) InvalidateRect(st->eccChips[i], nullptr, FALSE);

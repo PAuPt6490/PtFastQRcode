@@ -86,6 +86,9 @@ function Start-App([string]$arguments) {
 
 $previous = Get-ItemProperty 'HKCU:\Software\PtFastQRcode'
 
+# While shooting, the window must not close itself just because a capture steals focus.
+Set-ItemProperty 'HKCU:\Software\PtFastQRcode' -Name CloseOnBlur -Value 0 -Type DWord
+
 # The clipboard is sometimes held by another process (VirtualBox clipboard sharing,
 # an Explorer window, ...), so retry before giving up.
 function Set-DocsClipboard([string]$text) {
@@ -142,5 +145,6 @@ Add-Type -Namespace ShotKey -Name A -MemberDefinition '[DllImport("user32.dll")]
 # 恢复用户原来的外观设置并启动
 Stop-App
 Set-Theme ([int]$previous.Theme)
+Set-ItemProperty 'HKCU:\Software\PtFastQRcode' -Name CloseOnBlur -Value $previous.CloseOnBlur -Type DWord
 Start-App '--show'
 "restored theme to $($previous.Theme)"

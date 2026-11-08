@@ -16,7 +16,7 @@
 namespace {
 
 constexpr int kMaxCache = 4;                // tokens kept at once (newest first)
-constexpr uint64_t kDefaultTtlMs = 5 * 60 * 1000;  // a link stops working after five minutes
+constexpr uint64_t kDefaultTtlMs = 120 * 1000;  // a link stops working after two minutes
 constexpr size_t kMaxReceive = 4096;        // a request head is a few hundred bytes
 constexpr int kMaxConnections = 8;
 constexpr DWORD kSocketTimeoutMs = 4000;
@@ -484,10 +484,10 @@ std::wstring localAddress() {
 
 // ---------------------------------------------------------------- lifecycle
 
-void setLifetime(int minutes) {
-    if (minutes < 1) minutes = 1;
-    if (minutes > 120) minutes = 120;
-    g_ttlMs = (uint64_t)minutes * 60000u;
+void setLifetime(int seconds) {
+    if (seconds < 1) seconds = 1;
+    if (seconds > 7200) seconds = 7200;
+    g_ttlMs = (uint64_t)seconds * 1000u;
 }
 
 bool start(HWND window) {

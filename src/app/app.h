@@ -69,7 +69,7 @@ struct Settings {
     int popupWidth;   // remembered popup size in design pixels
     int popupHeight;
     bool imageServer;  // paste a picture -> serve it to phones over the LAN as a link QR
-    int linkMinutes;   // how long that link stays alive, in minutes
+    int linkSeconds;   // how long that link stays alive, in seconds
     std::wstring saveDir;
 };
 
@@ -204,10 +204,6 @@ struct PicturePreview {
     HBITMAP bitmap;
     int width;         // thumbnail, in pixels
     int height;
-    int sourceWidth;   // clipboard size
-    int sourceHeight;
-    int linkWidth;     // published size
-    int linkHeight;
 };
 
 bool publishClipboardPicture(std::wstring& url, PicturePreview& preview);
